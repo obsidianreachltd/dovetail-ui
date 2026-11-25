@@ -1,0 +1,22 @@
+[package]
+name = "prototype-window-tests"
+description = "M20 prototype: real-window tests run from `cargo test`, driving the event loop one step at a time."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+dovetail-render.workspace = true
+winit.workspace = true
+
+# Runs on the main thread, as macOS needs for windows. libtest's harness
+# runs tests on other threads.
+[[test]]
+name = "pumped"
+harness = false
+
+[lints]
+workspace = true

@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | ID | M20 |
-| Status | Not started |
+| Status | In progress |
 | Depends on | M07, M15 |
-| Plan | — |
+| Plan | [M20 plan](../plans/M20-testing-tools.md) |
 | Report | — |
 
 ## Summary
