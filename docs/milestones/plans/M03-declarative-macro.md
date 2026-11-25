@@ -50,6 +50,7 @@ Add `#[component]` and `ui!` in `dovetail-macros`. They turn declarations into t
 - **syn 3 is a new major version.** If it lacks something needed, use syn 2, which is still maintained.
 - **Rust changes error wording** between versions. CI runs the compile-fail tests in their own job, pinned to Rust 1.94.0 on Linux. Upgrade on purpose and regenerate the snapshots.
   - A `rust-toolchain.toml` pin was tried and removed. It installs the pinned version for each machine's default host, which on this Windows machine was `windows-gnu`, and that broke the wgpu build.
+  - On 2026-11-25 the pin came back, at Rust 1.100.0, after CI's newer clippy failed on lints the local version did not have. CONTRIBUTING.md now says to set rustup's default host to MSVC on Windows. The compile-fail job uses the same version, and the snapshots were regenerated for it.
 
 ## Testing
 

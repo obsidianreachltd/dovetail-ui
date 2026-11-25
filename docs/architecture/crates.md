@@ -34,9 +34,7 @@ An arrow means "depends on".
 
 ```text
 dovetail-ui (facade) ──► dovetail-controls ──► dovetail-core
-        │                    │
-        │                    └──────────► dovetail-layout ──► dovetail-core
-        ├──► dovetail-desktop ──► dovetail-render ──► dovetail-core
+        ├──► dovetail-desktop ──► dovetail-render ──► dovetail-layout ──► dovetail-core
         ├──► dovetail-macros  (procedural macros, no runtime dependencies)
         └──► dovetail-core
 
@@ -48,11 +46,12 @@ External foundations:
 - `dovetail-desktop` uses winit and AccessKit (`accesskit_winit`, [D0015](../decisions/D0015-accesskit-winit-adapter.md)). `dovetail-core` describes roles, names and states in its own types, so it keeps no dependencies.
 - `dovetail-render` uses wgpu, and re-exports it (`dovetail::render::wgpu`) so canvases draw with exactly the version Dovetail pins (M09).
 - From M04, `dovetail-render` also depends on `dovetail-layout`, because it paints the boxes that layout places.
+- `dovetail-controls` does not depend on `dovetail-layout`: controls make elements, and layout places them. Only its tests use layout. Rust 1.100's check for unused dependencies found this, and that docking no longer used controls, on 2026-11-25.
 - From M06, `dovetail-text` (fonts, rasterising, fallback and shaping) depends on nothing, and `dovetail-render` uses it to draw and measure text.
 - From M06, `dovetail-controls` also depends on `dovetail-text`, for `TextField`'s text model (`TextBuffer`) and for moving the caret between lines.
 - From M14, `dovetail-theme` depends on `dovetail-core` and `dovetail-macros`, and the facade re-exports it as `dovetail::theme`. `dovetail-controls`, `dovetail-commands`, `dovetail-docking` and `dovetail-documents` depend on it. The theme reaches the desktop and the painter through `Element::window_style`, so it does not depend on them.
 - From M11, `dovetail-documents` depends on `dovetail-core`, `dovetail-controls`, `dovetail-commands` and `dovetail-macros`, and the facade re-exports it as `dovetail::documents`. File dialogs come through `dovetail-core`'s `FileDialogs` host, and window titles and close requests through elements, so the documents crate does not depend on the desktop crate either.
-- From M10, `dovetail-docking` depends on `dovetail-core`, `dovetail-controls` and `dovetail-macros`, and the facade re-exports it as `dovetail::docking`. Floating windows are opened through `dovetail-core`'s window host, which `dovetail-desktop` installs, so the docking crate does not depend on the desktop crate either.
+- From M10, `dovetail-docking` depends on `dovetail-core`, `dovetail-macros` and, from M14, `dovetail-theme`, and the facade re-exports it as `dovetail::docking`. Floating windows are opened through `dovetail-core`'s window host, which `dovetail-desktop` installs, so the docking crate does not depend on the desktop crate either.
 - From M16, `dovetail-data` depends on `dovetail-core`, `dovetail-controls`, `dovetail-commands` (for `History`, D0022), `dovetail-macros` and `dovetail-theme`, and the facade re-exports it as `dovetail::data`. It learns where its views are scrolled to through `Element::on_scroll`, so it does not depend on the layout or desktop crates either.
 - From M17, `dovetail-image` (decoders, animation, icons, the icon set: D0024) depends only on `dovetail-core`, for `Picture` and `View`. The facade re-exports it as `dovetail::image`. `dovetail-render` uses it to draw pictures, and `dovetail-controls`, `dovetail-commands` and `dovetail-data` use it for icons. Core knows a picture only by its size, fit, colour and label; what it draws is a value only the renderer opens.
 - From M08, `dovetail-commands` depends on `dovetail-core`, `dovetail-controls` and `dovetail-macros`, and the facade re-exports it as `dovetail::commands`. The system menu bar is reached through `dovetail-core`'s `NativeMenus` host, which `dovetail-desktop` installs, so the commands crate does not depend on the desktop crate.

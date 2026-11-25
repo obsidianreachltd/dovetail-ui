@@ -520,7 +520,7 @@ impl Run<'_> {
         },
         // rlineto
         5 => {
-          for pair in s.chunks_exact(2) {
+          for pair in s.as_chunks::<2>().0 {
             let p = rel(self.at, pair[0], pair[1]);
             self.line_to(p);
           }
@@ -540,7 +540,7 @@ impl Run<'_> {
         },
         // rrcurveto
         8 => {
-          for c in s.chunks_exact(6) {
+          for c in s.as_chunks::<6>().0 {
             self.curve(c);
           }
         },
@@ -550,7 +550,7 @@ impl Run<'_> {
             return Err(None);
           }
           let curves = (s.len() - 2) / 6;
-          for c in s[..curves * 6].chunks_exact(6) {
+          for c in s[..curves * 6].as_chunks::<6>().0 {
             self.curve(c);
           }
           let rest = &s[curves * 6..];
@@ -563,7 +563,7 @@ impl Run<'_> {
             return Err(None);
           }
           let lines = (s.len() - 6) / 2;
-          for pair in s[..lines * 2].chunks_exact(2) {
+          for pair in s[..lines * 2].as_chunks::<2>().0 {
             let p = rel(self.at, pair[0], pair[1]);
             self.line_to(p);
           }
@@ -576,7 +576,7 @@ impl Run<'_> {
             dx1 = s[0];
             s = &s[1..];
           }
-          for c in s.chunks_exact(4) {
+          for c in s.as_chunks::<4>().0 {
             let c1 = rel(self.at, dx1, c[0]);
             let c2 = rel(c1, c[1], c[2]);
             let p = rel(c2, 0.0, c[3]);
@@ -591,7 +591,7 @@ impl Run<'_> {
             dy1 = s[0];
             s = &s[1..];
           }
-          for c in s.chunks_exact(4) {
+          for c in s.as_chunks::<4>().0 {
             let c1 = rel(self.at, c[0], dy1);
             let c2 = rel(c1, c[1], c[2]);
             let p = rel(c2, c[3], 0.0);

@@ -1,12 +1,15 @@
 error[E0425]: cannot find type `Lable` in this scope
   --> tests/fail/unknown_component.rs:11:27
    |
- 6 | #[component]
-   | ------------ similarly named struct `Label` defined here
-...
 11 | fn main() { let _ = ui! { Lable { text: "a" } }; }
-   |                           ^^^^^
+   |                           ^^^^^ not found in this scope
    |
+note: similarly named struct `Label` defined here
+  --> tests/fail/unknown_component.rs:6:1
+   |
+ 6 | #[component]
+   | ^^^^^^^^^^^^
+   = note: this error originates in the attribute macro `component` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: a struct with a similar name exists
    |
 11 - fn main() { let _ = ui! { Lable { text: "a" } }; }

@@ -56,7 +56,7 @@ Applications add only the packages they need. A small utility doesn't carry dock
 
 ## Getting started
 
-You need [Rust](https://rustup.rs) 1.89 or later, and a graphics driver that supports Vulkan, DirectX 12 or Metal.
+You need [Rust](https://rustup.rs) 1.89 or later, and a graphics driver that supports Vulkan, DirectX 12 or Metal. Inside this repository, rustup uses the version pinned in `rust-toolchain.toml`.
 
 Until the first release, Dovetail is used from a copy of this repository. Clone it, then install the `dovetail` command from it:
 

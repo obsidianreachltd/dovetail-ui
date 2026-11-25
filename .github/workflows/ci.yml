@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+# The Rust version is pinned in rust-toolchain.toml. Keep the versions below
+# the same as it, so new lints and compiler messages arrive only when it is
+# upgraded on purpose.
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
@@ -19,7 +22,7 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
@@ -35,15 +38,15 @@ jobs:
         run: cargo test -p dovetail-cli --test new_project -- --ignored
 
   # The compile-fail tests lock rustc's error messages, which change between
-  # Rust versions, so they run on one pinned version and one system.
-  # Upgrade the version on purpose and regenerate the .stderr files
+  # Rust versions, so they run on one system, with the pinned version.
+  # When the version is upgraded, regenerate the .stderr files
   # (crates/dovetail-macros/tests/compile_fail.rs).
   macro-errors:
-    name: macro error messages (Rust 1.94.0)
+    name: macro error messages (Rust 1.100.0)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.94.0
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
       - name: Test dovetail-macros
         run: cargo test -p dovetail-macros
@@ -63,7 +66,7 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
       - name: Install a display server and software Vulkan (Linux)
         if: runner.os == 'Linux'

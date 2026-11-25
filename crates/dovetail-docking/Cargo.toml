@@ -10,7 +10,6 @@ publish.workspace = true
 
 [dependencies]
 dovetail-core.workspace = true
-dovetail-controls.workspace = true
 dovetail-macros.workspace = true
 dovetail-theme.workspace = true
 

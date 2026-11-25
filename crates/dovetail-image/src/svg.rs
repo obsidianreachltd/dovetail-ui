@@ -207,7 +207,9 @@ fn walk(
       "polyline" | "polygon" => {
         let v = list(child.get("points").unwrap_or(""));
         let mut segs: Vec<Seg> = v
-          .chunks_exact(2)
+          .as_chunks::<2>()
+          .0
+          .iter()
           .enumerate()
           .map(|(i, p)| {
             let p = P::new(p[0], p[1]);

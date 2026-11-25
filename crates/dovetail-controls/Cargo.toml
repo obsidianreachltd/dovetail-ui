@@ -11,7 +11,6 @@ publish.workspace = true
 [dependencies]
 dovetail-core.workspace = true
 dovetail-image.workspace = true
-dovetail-layout.workspace = true
 dovetail-macros.workspace = true
 dovetail-theme.workspace = true
 dovetail-text.workspace = true

@@ -212,7 +212,7 @@ fn encode(linear: f32) -> u8 {
 fn premultiply(pixels: &[u8]) -> Vec<u8> {
   let lin = to_linear();
   let mut out = Vec::with_capacity(pixels.len());
-  for p in pixels.chunks_exact(4) {
+  for p in pixels.as_chunks::<4>().0 {
     let a = p[3];
     if a == 255 {
       out.extend_from_slice(p);
@@ -232,7 +232,7 @@ fn premultiply(pixels: &[u8]) -> Vec<u8> {
 fn unpremultiply(pixels: &[u8]) -> Vec<u8> {
   let lin = to_linear();
   let mut out = Vec::with_capacity(pixels.len());
-  for p in pixels.chunks_exact(4) {
+  for p in pixels.as_chunks::<4>().0 {
     let a = p[3];
     if a == 255 || a == 0 {
       out.extend_from_slice(&[p[0], p[1], p[2], a][..]);

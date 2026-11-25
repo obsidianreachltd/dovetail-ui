@@ -710,7 +710,6 @@ dependencies = [
 name = "dovetail-docking"
 version = "0.1.0"
 dependencies = [
- "dovetail-controls",
  "dovetail-core",
  "dovetail-layout",
  "dovetail-macros",

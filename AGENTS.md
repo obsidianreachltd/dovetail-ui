@@ -24,7 +24,7 @@ Before you change anything, read the [goals](docs/vision/goals.md), the [princip
 - `dovetail-core` has no dependencies. Follow the other [dependency rules](docs/architecture/crates.md#rules).
 - `unsafe` is allowed only in `crates/dovetail-desktop/src/platform/`, with a `// SAFETY:` comment on every block ([D0013](docs/decisions/D0013-scoped-unsafe-for-platform-code.md)).
 - winit, wgpu, AccessKit and its winit adapter are pinned to exact versions in the root `Cargo.toml`. Upgrade them only as a planned step, together, because the adapter must match winit.
-- The workspace needs Rust 1.89 or later.
+- `rust-toolchain.toml` pins the Rust version for building, linting and testing, and CI uses the same one. Upgrade it only as a planned step (see [CONTRIBUTING.md](CONTRIBUTING.md#setup)). The oldest supported version is `rust-version` in `Cargo.toml`, Rust 1.89: do not use features newer than it.
 
 ## Writing framework code
 
