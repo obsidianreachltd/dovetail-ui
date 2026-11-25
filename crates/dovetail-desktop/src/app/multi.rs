@@ -1,14 +1,15 @@
-//! Drag and drop within and between windows, windows opened by components,
-//! and focus requests (M10, decision D0016).
+//! Drag and drop between windows, windows opened by components, and focus
+//! requests (M10, decision D0016). What a drag does over each window is
+//! `dovetail_session::Drag` (D0027); this finds the window under the
+//! pointer.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use dovetail_core::{
-  Callback, DragData, DragEnd, DropEvent, DropKind, HostWindow, WindowHost,
-  WindowPlace, WindowRequest,
+  Callback, HostWindow, WindowHost, WindowPlace, WindowRequest,
 };
-use dovetail_layout::BoxKey;
+use dovetail_session::{Drag, Session};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
 
@@ -20,18 +21,8 @@ type WinitId = winit::window::WindowId;
 /// A window and a point in it, in logical pixels.
 type WindowPoint = (WinitId, (f32, f32));
 
-/// A drag in progress.
-pub(super) struct DragState {
-  data: DragData,
-  on_end: Callback<DragEnd>,
-  /// The drop target under the pointer that takes the drag, and the
-  /// pointer in its window.
-  over: Option<(WinitId, BoxKey, (f32, f32))>,
-  /// The pointer is over a Dovetail window.
-  inside: bool,
-  /// The pointer on the screen, in logical pixels, when known.
-  screen: Option<(f32, f32)>,
-}
+/// A drag in progress, across the windows.
+pub(super) type DragState = Drag<WinitId>;
 
 /// A window opened through the window host.
 pub(super) struct Hosted {
@@ -111,39 +102,16 @@ pub(super) fn place_of(window: &Window) -> WindowPlace {
   }
 }
 
-/// Offers a drag event to drop target `key` in `ui`, at `point` in the
-/// window. True when it takes it.
-fn offer(
-  ui: &UiWindow,
-  key: &BoxKey,
-  kind: DropKind,
-  point: (f32, f32),
-  data: &DragData,
-) -> bool {
-  let (Some(element), Some(rect)) =
-    (ui.layout.element(key), ui.layout.rect_of(key))
-  else {
-    return false;
-  };
-  let Some(handler) = &element.on_drop else {
-    return false;
-  };
-  handler.handle(&DropEvent {
-    kind,
-    x: point.0 - rect.x,
-    y: point.1 - rect.y,
-    width: rect.width,
-    height: rect.height,
-    data: data.clone(),
-  })
-}
-
 impl Shell {
-  fn ui(
+  fn session(
     &self,
     id: WinitId,
-  ) -> Option<&UiWindow> {
-    self.windows.get(&id).and_then(|e| e.ui.as_ref())
+  ) -> Option<&Session> {
+    self
+      .windows
+      .get(&id)
+      .and_then(|e| e.ui.as_ref())
+      .map(|ui: &UiWindow| &ui.session)
   }
 
   /// True while something is being dragged.
@@ -158,7 +126,7 @@ impl Shell {
     &mut self,
     id: WinitId,
   ) {
-    let Some(started) = dovetail_core::take_started_drag() else {
+    let Some(drag) = DragState::take_started() else {
       return;
     };
     self.cancel_drag();
@@ -167,16 +135,9 @@ impl Shell {
       .get_mut(&id)
       .and_then(|e| e.ui.as_mut())
     {
-      ui.captured = None;
-      ui.pressed = None;
+      ui.session.cancel_press();
     }
-    self.drag = Some(DragState {
-      data: started.data,
-      on_end: started.on_end,
-      over: None,
-      inside: true,
-      screen: None,
-    });
+    self.drag = Some(drag);
     self.drag_moved(id);
   }
 
@@ -193,7 +154,7 @@ impl Shell {
     let Some(ui) = source.ui.as_ref() else {
       return (None, None);
     };
-    let (x, y) = ui.cursor;
+    let (x, y) = ui.session.cursor();
     if x.is_nan() || y.is_nan() {
       return (None, None);
     }
@@ -250,51 +211,18 @@ impl Shell {
     &mut self,
     id: WinitId,
   ) {
-    let Some(drag) = &self.drag else {
+    let Some(mut drag) = self.drag.take() else {
       return;
     };
-    let data = drag.data.clone();
     let (found, screen) = self.locate(id);
-    let mut over = None;
-    if let Some((w, point)) = found
-      && let Some(ui) = self.ui(w)
-    {
-      for key in ui.layout.drop_targets_at(point.0, point.1) {
-        if offer(ui, &key, DropKind::Over, point, &data) {
-          over = Some((w, key, point));
-          break;
-        }
-      }
-    }
     let scale = self
       .windows
       .get(&id)
       .map_or(1.0, |e| e.window.scale_factor());
-    let Some(drag) = self.drag.as_mut() else {
-      return;
-    };
-    drag.inside = found.is_some();
-    drag.screen = screen.map(|(x, y)| ((x / scale) as f32, (y / scale) as f32));
-    let old = std::mem::replace(&mut drag.over, over.clone());
-    let same = |a: &(WinitId, BoxKey, (f32, f32)),
-                b: &(WinitId, BoxKey, (f32, f32))| {
-      a.0 == b.0 && a.1 == b.1
-    };
-    if let Some(old) = old
-      && !over.as_ref().is_some_and(|o| same(o, &old))
-    {
-      self.leave(&old, &data);
-    }
-  }
-
-  fn leave(
-    &self,
-    (w, key, point): &(WinitId, BoxKey, (f32, f32)),
-    data: &DragData,
-  ) {
-    if let Some(ui) = self.ui(*w) {
-      offer(ui, key, DropKind::Leave, *point, data);
-    }
+    let screen = screen.map(|(x, y)| ((x / scale) as f32, (y / scale) as f32));
+    let at = found.and_then(|(w, point)| Some((w, self.session(w)?, point)));
+    drag.moved(at, screen, |w| self.session(w));
+    self.drag = Some(drag);
   }
 
   /// The button was let go during a drag: the target under the pointer
@@ -311,34 +239,15 @@ impl Shell {
     let Some(drag) = self.drag.take() else {
       return false;
     };
-    let end = match &drag.over {
-      Some(over) => {
-        let taken = self.ui(over.0).is_some_and(|ui| {
-          offer(ui, &over.1, DropKind::Drop, over.2, &drag.data)
-        });
-        if taken {
-          DragEnd::Dropped
-        } else {
-          self.leave(over, &drag.data);
-          DragEnd::Cancelled
-        }
-      },
-      None if drag.inside => DragEnd::Cancelled,
-      None => DragEnd::Outside { screen: drag.screen },
-    };
-    drag.on_end.call(end);
+    drag.release(|w| self.session(w));
     true
   }
 
   /// Gives up the drag in progress, if there is one.
   pub(super) fn cancel_drag(&mut self) {
-    let Some(drag) = self.drag.take() else {
-      return;
-    };
-    if let Some(over) = &drag.over {
-      self.leave(over, &drag.data);
+    if let Some(drag) = self.drag.take() {
+      drag.cancel(|w| self.session(w));
     }
-    drag.on_end.call(DragEnd::Cancelled);
   }
 
   /// Carries out the requests components made through the window host.
@@ -386,10 +295,8 @@ impl Shell {
               .map(|(w, _)| *w)
               .collect();
             for w in gone {
-              if let Some(drag) = &mut self.drag
-                && drag.over.as_ref().is_some_and(|o| o.0 == w)
-              {
-                drag.over = None;
+              if let Some(drag) = &mut self.drag {
+                drag.forget_window(w);
               }
               self.windows.remove(&w);
             }
@@ -399,7 +306,7 @@ impl Shell {
               if e.hosted.as_ref().is_some_and(|h| h.id == id) {
                 e.window.set_title(&title);
                 if let Some(ui) = &mut e.ui {
-                  ui.title = title.clone();
+                  ui.session.set_title(title.clone());
                 }
               }
             }
@@ -413,70 +320,5 @@ impl Shell {
   /// closes.
   pub(super) fn close_hosted(&mut self) {
     self.windows.retain(|_, e| e.hosted.is_none());
-  }
-}
-
-impl UiWindow {
-  /// After layout: tells elements with a size handler their new size.
-  pub(super) fn report_sizes(&mut self) {
-    let mut calls = Vec::new();
-    let mut seen = std::collections::HashMap::new();
-    for b in self.layout.boxes() {
-      if let dovetail_layout::Content::Element(e) = &b.content
-        && let Some(on_size) = &e.on_size
-      {
-        let size = (b.rect.width, b.rect.height);
-        if self.sizes.get(&b.key) != Some(&size) {
-          calls.push((on_size.clone(), size));
-        }
-        seen.insert(b.key.clone(), size);
-      }
-    }
-    self.sizes = seen;
-    for (on_size, size) in calls {
-      on_size.call(size);
-    }
-  }
-
-  /// After layout: tells scrolling elements with a scroll handler where
-  /// they are scrolled to and how much can be seen, when it changes (M16).
-  pub(super) fn report_scrolls(&mut self) {
-    let mut calls = Vec::new();
-    let mut seen = std::collections::HashMap::new();
-    for b in self.layout.boxes() {
-      if let dovetail_layout::Content::Element(e) = &b.content
-        && let Some(on_scroll) = &e.on_scroll
-        && let Some(view) = self.layout.viewport(&b.key)
-      {
-        if self.viewports.get(&b.key) != Some(&view) {
-          calls.push((on_scroll.clone(), view));
-        }
-        seen.insert(b.key.clone(), view);
-      }
-    }
-    self.viewports = seen;
-    for (on_scroll, view) in calls {
-      on_scroll.call(view);
-    }
-  }
-
-  /// After layout: carries out a request to move focus, if this window
-  /// shows its target. True when focus moved here.
-  pub(super) fn take_focus_request(&mut self) -> bool {
-    let Some(target) = dovetail_core::pending_focus() else {
-      return false;
-    };
-    if !self.layout.has_focus_target(target) {
-      return false;
-    }
-    dovetail_core::focus_done(target);
-    match self.layout.focus_for(target) {
-      Some(key) => {
-        self.set_focus(Some(key));
-        self.focus_visible = true;
-        true
-      },
-      None => false,
-    }
   }
 }

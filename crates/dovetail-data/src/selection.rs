@@ -274,7 +274,8 @@ impl Selection {
       },
       KeyCode::Character(c) if !m.command() && !m.alt => {
         let text_of = text_of?;
-        let now = Instant::now();
+        // The UI thread's clock, which tests can move (D0027).
+        let now = dovetail_core::now();
         let typed = self.0.map(|s| {
           let fresh = s
             .typed_at

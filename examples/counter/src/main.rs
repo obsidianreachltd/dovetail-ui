@@ -6,15 +6,12 @@
 //!   it does not (M04 "Done when" item 5).
 
 use std::process::ExitCode;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
-use dovetail::desktop::{
-  Application, Context, Frame, KeyEvent, NamedKey, WindowId, WindowOptions,
-};
-use dovetail::layout::{Content, LayoutBox};
+use dovetail::desktop::NamedKey;
 use dovetail::prelude::*;
-use dovetail::{Edges, Element, ElementKind, Style};
+use dovetail::{Edges, Element, ElementKind, Role, Style};
+use dovetail_testing::windows::TestWindows;
+use dovetail_testing::{role, text};
 
 /// The example from the syntax document, unchanged.
 #[component]
@@ -63,117 +60,34 @@ fn main() -> ExitCode {
 
 // --- Self-test ---------------------------------------------------------------
 
-/// Presses of "Increment": three clicks, then Tab and Enter, then Space.
-const PRESSES: u32 = 5;
-
-struct SelfTest {
-  window: Option<WindowId>,
-  clicks: u32,
-}
-
-fn find_text<'a>(
-  boxes: &'a [LayoutBox],
-  wanted: &str,
-) -> Option<&'a LayoutBox> {
-  boxes.iter().find(
-    |b| matches!(&b.content, Content::Text { text, .. } if &**text == wanted),
-  )
-}
-
-impl Application for SelfTest {
-  fn started(
-    &mut self,
-    cx: &mut Context<'_>,
-  ) {
-    let options = WindowOptions::new("Counter self-test");
-    match cx.open_ui_window(options, ui! { App {} }) {
-      Ok(id) => self.window = Some(id),
-      Err(e) => {
-        println!("FAIL  could not open the window: {e}");
-        cx.exit();
-      },
-    }
-    cx.wake_after(Duration::from_secs(15));
-  }
-
-  fn draw(
-    &mut self,
-    _: &mut Context<'_>,
-    _: WindowId,
-    _: &mut Frame,
-  ) {
-  }
-
-  fn frame_presented(
-    &mut self,
-    cx: &mut Context<'_>,
-    window: WindowId,
-  ) {
-    let boxes = cx.ui_boxes(window);
-    let expected = format!("Count: {}", self.clicks);
-    if find_text(boxes, &expected).is_none() {
-      // An earlier frame; the next one shows the new count.
-      return;
-    }
-    println!("PASS  the window shows \"{expected}\"");
-    if self.clicks == PRESSES {
-      PASSED.store(true, Ordering::Relaxed);
-      println!(
-        "PASS  3 clicks, Tab and Enter, and Space each pressed \"Increment\" once"
-      );
-      cx.close_window(window);
-      return;
-    }
-    let button = find_text(boxes, "Increment")
-      .expect("the button's text")
-      .rect;
-    let (x, y) = (
-      button.x + button.width / 2.0,
-      button.y + button.height / 2.0,
-    );
-    self.clicks += 1;
-    match self.clicks {
-      1..=3 => cx.click(window, x, y),
-      4 => {
-        // Tab focuses the button (the only focusable element), and Enter
-        // presses it.
-        let tabbed = cx.key(window, &KeyEvent::named(NamedKey::Tab));
-        let entered = cx.key(window, &KeyEvent::named(NamedKey::Enter));
-        if !(tabbed && entered) {
-          println!("FAIL  Tab used: {tabbed}, Enter used: {entered}");
-          cx.exit();
-        }
-      },
-      _ => {
-        if !cx.key(window, &KeyEvent::named(NamedKey::Space)) {
-          println!("FAIL  Space did not press the focused button");
-          cx.exit();
-        }
-      },
-    }
-  }
-
-  fn woke(
-    &mut self,
-    cx: &mut Context<'_>,
-  ) {
-    println!("FAIL  timed out waiting for \"Count: {}\"", self.clicks);
-    cx.exit();
-  }
-}
-
-/// Set when every check passed; the application is gone by the time
-/// `run` returns.
-static PASSED: AtomicBool = AtomicBool::new(false);
-
+/// Clicks "Increment" three times, then presses it with Tab and Enter, and
+/// with Space, checking the count after each. It drives a real window
+/// through the window itself (M20, `TestWindows`), and a failed check
+/// panics with what the window shows.
 fn self_test() -> ExitCode {
-  let result = dovetail::desktop::run(SelfTest { window: None, clicks: 0 });
-  match result {
-    Ok(()) if PASSED.load(Ordering::Relaxed) => ExitCode::SUCCESS,
-    Ok(()) => ExitCode::FAILURE,
-    Err(e) => {
-      eprintln!("counter: {e}");
-      ExitCode::FAILURE
-    },
+  let mut t = TestWindows::new();
+  let w = t.open("Counter self-test", (400.0, 300.0), ui! { App {} });
+  let shows = |t: &mut TestWindows, n: u32| {
+    let count = format!("Count: {n}");
+    t.find(w, text(count.as_str()));
+    println!("PASS  the window shows \"{count}\"");
+  };
+  shows(&mut t, 0);
+  let increment = role(Role::Button).label("Increment");
+  for n in 1..=3 {
+    t.click(w, increment.clone());
+    shows(&mut t, n);
   }
+  // Tab focuses the button (the only focusable element), and Enter
+  // presses it.
+  assert!(t.key(w, NamedKey::Tab), "Tab moved focus");
+  assert!(t.key(w, NamedKey::Enter), "Enter pressed the button");
+  shows(&mut t, 4);
+  assert!(t.key(w, NamedKey::Space), "Space pressed the button");
+  shows(&mut t, 5);
+  println!(
+    "PASS  3 clicks, Tab and Enter, and Space each pressed \"Increment\" once"
+  );
+  t.close(w);
+  ExitCode::SUCCESS
 }

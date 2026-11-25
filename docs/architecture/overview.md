@@ -100,6 +100,7 @@ Rules for the repository:
 - **Unit tests:** in every crate.
 - **Macro tests:** compile-fail tests that pin the wording of error messages ([M03](../milestones/overviews/M03-declarative-macro.md)).
 - **Layout and painting tests:** compare the layout tree, and rendered images where useful.
+- **User interface tests:** `dovetail-testing` runs components with no window, finds elements by role and label, sends input through the window, and moves a test clock. It also compares pictures and drives real windows. See [testing](testing.md) (M20).
 - **Platform checks:** a short manual checklist on each operating system for IME, accessibility and DPI, written in each milestone plan.
 - **Performance:** fixed test scenes with set sizes, for example 1,000 elements in M04 and 10,000 canvas shapes in M09. Frame time and update time are recorded in completion reports.
 

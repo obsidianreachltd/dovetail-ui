@@ -1,19 +1,22 @@
 //! M17: `Image` loads a file off the UI thread, with a placeholder until it
 //! is ready, and `Icon` and `IconButton` give pictures their sizes and
-//! names. These lay the controls out with no window or GPU.
+//! names. These run the controls with no window or GPU (`TestUi`, M20),
+//! and move its clock to play animations, so nothing waits in real time
+//! but decoding.
 
 extern crate dovetail_core as dovetail;
 
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use dovetail::{Picture, Role, Size, Tree, View, run_task_messages, use_state};
+use dovetail::{Picture, Role, Size, View, use_state};
 use dovetail_controls::{
   Button, Column, Icon, IconButton, Image, ImageState, Text,
 };
 use dovetail_image::icons;
-use dovetail_layout::{Content, FixedPitch, Layout, LayoutBox};
+use dovetail_layout::{Content, LayoutBox};
 use dovetail_macros::{component, ui};
+use dovetail_testing::{Options, TestUi, text};
 
 fn fixture(name: &str) -> String {
   Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -47,73 +50,48 @@ fn Pictures(#[prop(into)] path: String) -> View {
   }
 }
 
-struct Window {
-  tree: Tree,
-  layout: Layout,
+fn open(path: &str) -> TestUi {
+  TestUi::with(
+    ui! { Pictures { path: path } },
+    Options {
+      size: (400.0, 600.0),
+      ..Options::default()
+    },
+  )
 }
 
-impl Window {
-  fn open(path: &str) -> Self {
-    let mut tree = Tree::new();
-    tree.mount(ui! { Pictures { path: path } });
-    let mut w = Self { tree, layout: Layout::new() };
-    w.refresh();
-    w
-  }
+/// The pictures shown, with their boxes.
+fn pictures(ui: &TestUi) -> Vec<(Picture, &LayoutBox)> {
+  ui.layout()
+    .boxes()
+    .iter()
+    .filter_map(|b| match &b.content {
+      Content::Picture { picture, .. } => Some((picture.clone(), b)),
+      _ => None,
+    })
+    .collect()
+}
 
-  fn refresh(&mut self) {
-    self.tree.update();
-    self
-      .layout
-      .update(&self.tree, 400.0, 600.0, &FixedPitch::default());
-  }
-
-  fn pictures(&self) -> Vec<(Picture, &LayoutBox)> {
-    self
-      .layout
-      .boxes()
+/// Waits, in real time, for the decoding to report `state`.
+fn wait_for(
+  ui: &mut TestUi,
+  state: &str,
+) {
+  ui.wait_until(state, |ui| {
+    ui.find_all(dovetail_testing::role(Role::Label))
       .iter()
-      .filter_map(|b| match &b.content {
-        Content::Picture { picture, .. } => Some((picture.clone(), b)),
-        _ => None,
-      })
-      .collect()
-  }
-
-  fn has_text(
-    &self,
-    start: &str,
-  ) -> bool {
-    self
-      .layout
-      .boxes()
-      .iter()
-      .any(|b| matches!(&b.content, Content::Text { text, .. } if text.starts_with(start)))
-  }
-
-  /// Waits for the decoding tasks to report.
-  fn wait_for(
-    &mut self,
-    start: &str,
-  ) {
-    let began = Instant::now();
-    while !self.has_text(start) {
-      assert!(began.elapsed() < Duration::from_secs(10), "no {start}");
-      std::thread::sleep(Duration::from_millis(5));
-      run_task_messages();
-      self.refresh();
-    }
-  }
+      .any(|f| f.text().is_some_and(|t| t.starts_with(state)))
+  });
 }
 
 #[test]
 fn an_image_shows_a_placeholder_then_the_picture() {
-  let mut w = Window::open(&fixture("gdi.png"));
+  let mut w = open(&fixture("gdi.png"));
   // While loading: placeholders, one named for assistive tools, and the
   // other pictures.
-  assert!(w.has_text("loading"));
+  assert!(w.has(text("loading")));
   let placeholder = w
-    .layout
+    .layout()
     .boxes()
     .iter()
     .find_map(|b| match &b.content {
@@ -124,8 +102,8 @@ fn an_image_shows_a_placeholder_then_the_picture() {
     })
     .expect("a placeholder");
   assert_eq!(placeholder.0.as_deref(), Some("Gradient"));
-  w.wait_for("ready");
-  let pictures = w.pictures();
+  wait_for(&mut w, "ready");
+  let pictures = pictures(&w);
   let images: Vec<_> = pictures
     .iter()
     .filter(|(p, _)| !p.is_icon())
@@ -146,11 +124,10 @@ fn an_image_shows_a_placeholder_then_the_picture() {
 
 #[test]
 fn icons_take_the_text_size_or_their_own() {
-  let mut w = Window::open(&fixture("gdi.png"));
+  let mut w = open(&fixture("gdi.png"));
   // Once loaded, the placeholders' icons are gone.
-  w.wait_for("ready");
-  let icons: Vec<_> = w
-    .pictures()
+  wait_for(&mut w, "ready");
+  let icons: Vec<_> = pictures(&w)
     .into_iter()
     .filter(|(p, _)| p.is_icon())
     .collect();
@@ -169,11 +146,11 @@ fn icons_take_the_text_size_or_their_own() {
 
 #[test]
 fn a_broken_file_says_why() {
-  let mut w = Window::open(&fixture("make.ps1"));
-  w.wait_for("failed");
-  assert!(w.has_text("failed: not a PNG, JPEG or GIF image"));
+  let mut w = open(&fixture("make.ps1"));
+  wait_for(&mut w, "failed");
+  assert!(w.has(text("failed: not a PNG, JPEG or GIF image")));
   let failed = w
-    .layout
+    .layout()
     .boxes()
     .iter()
     .find_map(|b| match &b.content {
@@ -230,63 +207,45 @@ fn Shared(bytes: Arc<[u8]>) -> View {
   }
 }
 
-fn open_shared(bytes: Arc<[u8]>) -> Window {
-  let mut tree = Tree::new();
-  tree.mount(ui! { Shared { bytes: bytes } });
-  let mut w = Window { tree, layout: Layout::new() };
-  w.refresh();
-  w
+/// The shared images, decoded, at their first frame.
+fn open_shared(bytes: Arc<[u8]>) -> TestUi {
+  let mut ui = TestUi::with(
+    ui! { Shared { bytes: bytes } },
+    Options {
+      size: (400.0, 600.0),
+      ..Options::default()
+    },
+  );
+  // Decoding is the one thing that takes real time.
+  ui.wait_until("the first frame", |ui| colour(ui).is_some());
+  ui
 }
 
 /// The colour of the first picture shown, once ready.
-fn colour(w: &Window) -> Option<[u8; 3]> {
-  let (picture, _) = w
-    .pictures()
+fn colour(ui: &TestUi) -> Option<[u8; 3]> {
+  let (picture, _) = pictures(ui)
     .into_iter()
     .find(|(p, _)| p.label.as_deref() == Some("One"))?;
   let p = picture.source::<Bitmap>()?.to_rgba().pixels;
   Some([p[0], p[1], p[2]])
 }
 
-/// The colours shown, each change once, until `enough` of them have been
-/// seen or `time` has passed.
-///
-/// The tests wait for what they expect, not for a fixed time, because CI
-/// machines can be slow to decode and to wake for the next frame.
-fn watch_until(
-  w: &mut Window,
-  enough: usize,
-  time: Duration,
+/// How long each frame shows.
+const FRAME: Duration = Duration::from_millis(40);
+
+/// The colour now, then after each of `frames` moves of the clock by one
+/// frame's time.
+fn play(
+  ui: &mut TestUi,
+  frames: usize,
 ) -> Vec<[u8; 3]> {
-  let start = Instant::now();
-  let mut seen: Vec<[u8; 3]> = Vec::new();
-  while seen.len() < enough && start.elapsed() < time {
-    std::thread::sleep(Duration::from_millis(3));
-    run_task_messages();
-    w.refresh();
-    if let Some(c) = colour(w)
-      && seen.last() != Some(&c)
-    {
-      seen.push(c);
-    }
+  let mut seen = vec![colour(ui).expect("a frame")];
+  for _ in 0..frames {
+    ui.advance(FRAME);
+    seen.push(colour(ui).expect("a frame"));
   }
   seen
 }
-
-/// The colours shown over `time`, each change once.
-fn watch(
-  w: &mut Window,
-  time: Duration,
-) -> Vec<[u8; 3]> {
-  watch_until(w, usize::MAX, time)
-}
-
-/// Long enough for anything these tests wait for, on a slow machine.
-const PATIENCE: Duration = Duration::from_secs(10);
-
-/// Far longer than a frame (40 ms): if nothing changes in this time, the
-/// animation is still.
-const STILL: Duration = Duration::from_millis(300);
 
 const R: [u8; 3] = [255, 0, 0];
 const G: [u8; 3] = [0, 255, 0];
@@ -295,10 +254,9 @@ const B: [u8; 3] = [0, 0, 255];
 #[test]
 fn images_of_the_same_bytes_share_one_decoding() {
   let before = image_decodes();
-  let mut w = open_shared(three_colours(Some(1)));
-  watch_until(&mut w, 1, PATIENCE);
+  let w = open_shared(three_colours(Some(1)));
   assert_eq!(
-    w.pictures()
+    pictures(&w)
       .iter()
       .filter(|(p, _)| !p.is_icon())
       .count(),
@@ -310,25 +268,22 @@ fn images_of_the_same_bytes_share_one_decoding() {
 #[test]
 fn an_animation_plays_as_many_times_as_it_says_then_stops() {
   let mut w = open_shared(three_colours(Some(2)));
-  let seen = watch_until(&mut w, 6, PATIENCE);
-  assert_eq!(seen, [R, G, B, R, G, B], "twice through");
-  let after = watch(&mut w, STILL);
-  assert_eq!(after, [B], "stopped on the last frame");
+  assert_eq!(play(&mut w, 5), [R, G, B, R, G, B], "twice through");
+  // Long after, it is still on the last frame.
+  w.advance(Duration::from_secs(5));
+  assert_eq!(colour(&w), Some(B), "stopped on the last frame");
 }
 
 #[test]
 fn an_animation_stops_when_paused_and_plays_on() {
   let mut w = open_shared(three_colours(None));
   // Past the end of the first play: it goes on.
-  let seen = watch_until(&mut w, 5, PATIENCE);
-  assert_eq!(seen, [R, G, B, R, G], "plays for ever");
+  assert_eq!(play(&mut w, 4), [R, G, B, R, G], "plays for ever");
   PLAYING.get().expect("state").set(false);
-  w.refresh();
-  let paused = colour(&w);
-  let still = watch(&mut w, STILL);
-  assert_eq!(still.len(), 1, "one frame while paused: {still:?}");
-  assert_eq!(still.first().copied(), paused);
+  w.update();
+  w.advance(Duration::from_secs(5));
+  assert_eq!(colour(&w), Some(G), "still while paused");
   PLAYING.get().expect("state").set(true);
-  let again = watch_until(&mut w, 3, PATIENCE);
-  assert_eq!(again.len(), 3, "plays on: {again:?}");
+  w.update();
+  assert_eq!(play(&mut w, 3), [G, B, R, G], "plays on");
 }

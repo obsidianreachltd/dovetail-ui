@@ -672,6 +672,7 @@ dependencies = [
  "dovetail-image",
  "dovetail-layout",
  "dovetail-macros",
+ "dovetail-testing",
  "dovetail-text",
  "dovetail-theme",
 ]
@@ -702,6 +703,7 @@ dependencies = [
  "dovetail-core",
  "dovetail-layout",
  "dovetail-render",
+ "dovetail-session",
  "dovetail-text",
  "winit",
 ]
@@ -761,6 +763,27 @@ dependencies = [
  "dovetail-layout",
  "dovetail-text",
  "wgpu",
+]
+
+[[package]]
+name = "dovetail-session"
+version = "0.1.0"
+dependencies = [
+ "dovetail-core",
+ "dovetail-layout",
+]
+
+[[package]]
+name = "dovetail-testing"
+version = "0.1.0"
+dependencies = [
+ "dovetail-core",
+ "dovetail-desktop",
+ "dovetail-image",
+ "dovetail-layout",
+ "dovetail-render",
+ "dovetail-session",
+ "dovetail-ui",
 ]
 
 [[package]]
@@ -888,7 +911,7 @@ dependencies = [
 name = "example-counter"
 version = "0.1.0"
 dependencies = [
- "dovetail-layout",
+ "dovetail-testing",
  "dovetail-ui",
 ]
 
@@ -917,6 +940,7 @@ dependencies = [
 name = "example-form"
 version = "0.1.0"
 dependencies = [
+ "dovetail-testing",
  "dovetail-ui",
 ]
 

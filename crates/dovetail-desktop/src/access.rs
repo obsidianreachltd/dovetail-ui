@@ -1,31 +1,30 @@
 //! The accessibility tree (M07): what screen readers and other assistive
-//! tools see of a UI window, built with AccessKit (D0003, D0015).
+//! tools see of a UI window, sent with AccessKit (D0003, D0015).
 //!
-//! The tree is built from the laid-out boxes:
-//!
-//! - the window is the root, named by its title;
-//! - an element with a role, or one that can take focus or be pressed,
-//!   becomes a node; other elements pass their children up;
-//! - text becomes a label, except inside buttons and switches, which take
-//!   their name from it, and text fields, which describe it as text runs
-//!   with the selection, so screen readers can follow the caret.
+//! `dovetail-session` describes the tree: which nodes there are, and their
+//! roles, names, states and actions (D0027). This module turns that into
+//! AccessKit's nodes. It also adds what only AccessKit needs: a text field's
+//! text as runs of characters, one for each line, with where each
+//! character is, so screen readers can follow the caret.
 //!
 //! Only nodes that changed since the last update are sent.
 
 use std::collections::HashMap;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 
 use accesskit::{
   Action, ActionData, ActionRequest, Affine, Node, NodeId, Rect as AkRect,
   Role as AkRole, SortDirection, TextPosition, TextSelection, Toggled, TreeId,
   TreeInfo, TreeUpdate,
 };
-use dovetail_core::{AccessAction, Element, Role, SortOrder};
-use dovetail_layout::{BoxKey, Content, Layout, LayoutBox, Measure, Rect};
+use dovetail_core::{AccessAction, Role, SortOrder};
+use dovetail_layout::{BoxKey, Content, Layout, Measure, Rect};
+use dovetail_session::{
+  AccessId, AccessKind, AccessNode, Numeric, Request, TextField, Toggle,
+  named_by_contents,
+};
 
 /// The id of the window's own node.
-const ROOT: NodeId = NodeId(0);
+const ROOT: NodeId = NodeId(AccessId::ROOT.0);
 
 /// What a node stands for, to carry out actions on it.
 #[derive(Clone, Debug)]
@@ -42,17 +41,6 @@ enum Target {
   },
 }
 
-/// What an action from an assistive tool asks the window to do.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum Request {
-  /// Move keyboard focus to this element.
-  Focus(BoxKey),
-  /// Press this element.
-  Click(BoxKey),
-  /// Edit the text of this element.
-  Edit(BoxKey, AccessAction),
-}
-
 /// A window's accessibility tree, as last sent.
 #[derive(Default)]
 pub(crate) struct Access {
@@ -64,15 +52,12 @@ pub(crate) struct Access {
   fresh: bool,
 }
 
-/// A stable id for a box's node: a hash of its key, never the root's.
-fn node_id(
-  key: &BoxKey,
-  part: u32,
-) -> NodeId {
-  let mut h = DefaultHasher::new();
-  key.hash(&mut h);
-  part.hash(&mut h);
-  NodeId(h.finish().max(1))
+fn node_id(id: AccessId) -> NodeId {
+  NodeId(id.0)
+}
+
+fn node_ids(ids: &[AccessId]) -> Vec<NodeId> {
+  ids.iter().copied().map(node_id).collect()
 }
 
 fn rect(r: Rect) -> AkRect {
@@ -82,31 +67,6 @@ fn rect(r: Rect) -> AkRect {
     f64::from(r.x + r.width),
     f64::from(r.y + r.height),
   )
-}
-
-/// The text inside box `index`, joined with spaces.
-fn text_of(
-  boxes: &[LayoutBox],
-  index: usize,
-) -> String {
-  let mut parts = Vec::new();
-  let mut stack = vec![index];
-  while let Some(i) = stack.pop() {
-    match &boxes[i].content {
-      Content::Text { text, .. } => parts.push(text.to_string()),
-      // A picture with a label is named by it, as an icon-only button is
-      // (M17); decoration adds nothing.
-      Content::Picture { picture, .. } => {
-        if let Some(label) = &picture.label {
-          parts.push(label.to_string());
-        }
-      },
-      Content::Element(_) => {
-        stack.extend(boxes[i].children.iter().rev());
-      },
-    }
-  }
-  parts.join(" ")
 }
 
 fn ak_role(role: Role) -> AkRole {
@@ -153,280 +113,164 @@ fn ak_role(role: Role) -> AkRole {
   }
 }
 
-/// Roles whose name is their text, so their text is not read again.
-fn named_by_contents(role: Role) -> bool {
-  matches!(
-    role,
-    Role::Button
-      | Role::Switch
-      | Role::CheckBox
-      | Role::Heading
-      | Role::MenuItem
-      | Role::ListBoxOption
-      | Role::Tab
-      | Role::RadioButton
-      | Role::Link
-      | Role::Tooltip
-      | Role::TreeItem
-      | Role::Cell
-      | Role::ColumnHeader
-  )
-}
-
 fn is_text_input(role: Role) -> bool {
   matches!(role, Role::TextInput | Role::MultilineTextInput)
 }
 
-/// Builds the nodes, one tree walk.
-struct Builder<'a> {
-  boxes: &'a [LayoutBox],
+/// Turns the session's description into AccessKit's nodes.
+struct Translator<'a> {
   layout: &'a Layout,
   measure: &'a dyn Measure,
-  /// A description from an element with no node, for the next node made
-  /// inside it.
-  description: Option<String>,
   nodes: Vec<(NodeId, Node)>,
   targets: HashMap<NodeId, Target>,
-  /// The node of each element, to find the focused one.
-  by_key: HashMap<BoxKey, NodeId>,
-  /// The node of the last current item seen and not yet given to the
-  /// focusable view around it (M16).
-  current: Option<NodeId>,
 }
 
-impl Builder<'_> {
-  /// How far a scrolling element is scrolled, and how far it can go.
-  fn scroll_of(
-    &self,
-    key: &BoxKey,
-  ) -> Option<(f32, f32, f32, f32)> {
-    let ((x, y), (max_x, max_y)) = self.layout.scroll_extent(key)?;
-    Some((x, y, max_x, max_y))
-  }
-
-  /// The nodes for box `index`, to go in its parent's children.
-  fn visit(
+impl Translator<'_> {
+  fn element(
     &mut self,
-    index: usize,
-  ) -> Vec<NodeId> {
-    let b = &self.boxes[index];
-    match &b.content {
-      // Empty text, such as a blank label, has nothing to read.
-      Content::Text { text, .. } if text.trim().is_empty() => Vec::new(),
-      // A picture with a label is an image; one without is decoration,
-      // which assistive tools skip (M17).
-      Content::Picture { picture, .. } => match &picture.label {
-        Some(label) => {
-          let id = node_id(&b.key, 0);
-          let mut node = Node::new(AkRole::Image);
-          node.set_label(label.to_string());
-          node.set_bounds(rect(b.rect));
-          self.nodes.push((id, node));
-          vec![id]
-        },
-        None => Vec::new(),
-      },
-      Content::Text { text, .. } => {
-        let id = node_id(&b.key, 0);
-        let mut node = Node::new(AkRole::Label);
-        node.set_value(text.to_string());
-        node.set_bounds(rect(b.rect));
-        self.nodes.push((id, node));
-        vec![id]
-      },
-      Content::Element(e) => {
-        let is_node = e.role != Role::None
-          || e.focusable
-          || e.on_press.is_some()
-          || e.disabled;
-        if !is_node {
-          // A description with no node of its own goes to the first node
-          // inside, as a tooltip's does to what it wraps.
-          let outer = self.description.clone();
-          if self.description.is_none() {
-            self.description.clone_from(&e.description);
-          }
-          let nodes = self.children(index);
-          self.description = outer;
-          return nodes;
-        }
-        let id = node_id(&b.key, 0);
-        let mut node = Node::new(ak_role(e.role));
-        node.set_bounds(rect(b.rect));
-        if e.focusable {
-          node.add_action(Action::Focus);
-        }
-        if e.on_press.is_some() {
-          node.add_action(Action::Click);
-        }
-        match (e.role, e.toggled) {
-          // A tab and a radio button are selected rather than switched on.
-          (Role::Tab | Role::RadioButton | Role::ListBoxOption, Some(on)) => {
-            node.set_selected(on)
-          },
-          (_, _) if e.mixed => node.set_toggled(Toggled::Mixed),
-          (_, Some(on)) => node.set_toggled(Toggled::from(on)),
-          _ => {},
-        }
-        match (e.value, e.range) {
-          (Some(value), Some(range)) => {
-            node.set_numeric_value(f64::from(value));
-            node.set_min_numeric_value(f64::from(range.min));
-            node.set_max_numeric_value(f64::from(range.max));
-            if range.step > 0.0 {
-              node.set_numeric_value_step(f64::from(range.step));
-            }
-            if !e.disabled {
-              node.add_action(Action::Increment);
-              node.add_action(Action::Decrement);
-              node.add_action(Action::SetValue);
-            }
-          },
-          (Some(value), None) => {
-            node.set_numeric_value(f64::from(value) * 100.0);
-            node.set_min_numeric_value(0.0);
-            node.set_max_numeric_value(100.0);
-          },
-          _ => {},
-        }
-        if let Some(open) = e.expanded {
-          node.set_expanded(open);
-          // Pressing opens or closes it, so tools can do either.
-          if e.on_press.is_some() {
-            node.add_action(if open {
-              Action::Collapse
-            } else {
-              Action::Expand
-            });
-          }
-        }
-        if let Some(value) = &e.text_value {
-          node.set_value(value.clone());
-        }
-        let description = e
-          .description
-          .clone()
-          .or_else(|| self.description.take());
-        if let Some(d) = description.filter(|d| !d.is_empty()) {
-          node.set_description(d);
-        }
-        if let Some((x, y, max_x, max_y)) = self.scroll_of(&b.key) {
-          if max_x > 0.0 {
-            node.set_scroll_x(f64::from(x));
-            node.set_scroll_x_min(0.0);
-            node.set_scroll_x_max(f64::from(max_x));
-          }
-          if max_y > 0.0 {
-            node.set_scroll_y(f64::from(y));
-            node.set_scroll_y_min(0.0);
-            node.set_scroll_y_max(f64::from(max_y));
-          }
-        }
-        // Rows, items and cells (M16).
-        if let Some(place) = e.item {
-          node.set_position_in_set(place.index + 1);
-          node.set_size_of_set(place.count);
-          if let Some(level) = place.level {
-            node.set_level(level);
-          }
-          if e.role == Role::Row {
-            node.set_row_index(place.index);
-          }
-        }
-        if let Some(on) = e.selected {
-          node.set_selected(on);
-        }
-        if e.multiselect {
-          node.set_multiselectable();
-        }
-        if let Some((rows, columns)) = e.table_size {
-          node.set_row_count(rows);
-          node.set_column_count(columns);
-        }
-        if let Some(column) = e.column {
-          node.set_column_index(column);
-        }
-        match e.sorted {
-          Some(SortOrder::Ascending) => {
-            node.set_sort_direction(SortDirection::Ascending)
-          },
-          Some(SortOrder::Descending) => {
-            node.set_sort_direction(SortDirection::Descending)
-          },
-          None => {},
-        }
-        if e.role == Role::Dialog {
-          node.set_modal();
-        }
-        if e.disabled {
-          node.set_disabled();
-        }
-        let name = e.label.clone().or_else(|| {
-          named_by_contents(e.role).then(|| text_of(self.boxes, index))
-        });
-        if let Some(name) = name.filter(|n| !n.is_empty()) {
-          node.set_label(name);
-        }
-        // The current item inside a view that keeps focus itself is the
-        // view's active descendant (M16).
-        let outer_current = self.current.take();
-        if is_text_input(e.role) {
-          self.text_input(index, e, &mut node);
-        } else if !named_by_contents(e.role) {
-          node.set_children(self.children(index));
-        }
-        let inner_current = self.current.take();
-        if e.current {
-          self.current = Some(id);
-        } else if let Some(c) = inner_current.filter(|_| e.focusable) {
-          node.set_active_descendant(c);
-        } else {
-          self.current = inner_current;
-        }
-        self.current = self.current.or(outer_current);
-        self.by_key.insert(b.key.clone(), id);
-        self
-          .targets
-          .insert(id, Target::Element(b.key.clone()));
-        self.nodes.push((id, node));
-        vec![id]
-      },
+    n: &AccessNode,
+    role: Role,
+  ) -> Node {
+    let mut node = Node::new(ak_role(role));
+    if let Some(bounds) = n.bounds {
+      node.set_bounds(rect(bounds));
     }
-  }
-
-  fn children(
-    &mut self,
-    index: usize,
-  ) -> Vec<NodeId> {
-    self.boxes[index]
-      .children
-      .clone()
-      .into_iter()
-      .flat_map(|c| self.visit(c))
-      .collect()
+    if n.actions.focus {
+      node.add_action(Action::Focus);
+    }
+    if n.actions.click {
+      node.add_action(Action::Click);
+    }
+    match n.toggled {
+      Some(Toggle::Mixed) => node.set_toggled(Toggled::Mixed),
+      Some(Toggle::On) => node.set_toggled(Toggled::True),
+      Some(Toggle::Off) => node.set_toggled(Toggled::False),
+      None => {},
+    }
+    match n.numeric {
+      Some(Numeric::Range { value, min, max, step }) => {
+        node.set_numeric_value(f64::from(value));
+        node.set_min_numeric_value(f64::from(min));
+        node.set_max_numeric_value(f64::from(max));
+        if let Some(step) = step {
+          node.set_numeric_value_step(f64::from(step));
+        }
+      },
+      Some(Numeric::Fraction(value)) => {
+        node.set_numeric_value(f64::from(value) * 100.0);
+        node.set_min_numeric_value(0.0);
+        node.set_max_numeric_value(100.0);
+      },
+      None => {},
+    }
+    if n.actions.increment {
+      node.add_action(Action::Increment);
+    }
+    if n.actions.decrement {
+      node.add_action(Action::Decrement);
+    }
+    if n.actions.set_value {
+      node.add_action(Action::SetValue);
+    }
+    if let Some(open) = n.expanded {
+      node.set_expanded(open);
+    }
+    if n.actions.collapse {
+      node.add_action(Action::Collapse);
+    }
+    if n.actions.expand {
+      node.add_action(Action::Expand);
+    }
+    if let Some(value) = &n.value {
+      node.set_value(value.clone());
+    }
+    if let Some(d) = &n.description {
+      node.set_description(d.clone());
+    }
+    if let Some(s) = n.scroll_x {
+      node.set_scroll_x(f64::from(s.at));
+      node.set_scroll_x_min(0.0);
+      node.set_scroll_x_max(f64::from(s.max));
+    }
+    if let Some(s) = n.scroll_y {
+      node.set_scroll_y(f64::from(s.at));
+      node.set_scroll_y_min(0.0);
+      node.set_scroll_y_max(f64::from(s.max));
+    }
+    if let Some(p) = n.position_in_set {
+      node.set_position_in_set(p);
+    }
+    if let Some(c) = n.size_of_set {
+      node.set_size_of_set(c);
+    }
+    if let Some(level) = n.level {
+      node.set_level(level);
+    }
+    if let Some(row) = n.row_index {
+      node.set_row_index(row);
+    }
+    if let Some(on) = n.selected {
+      node.set_selected(on);
+    }
+    if n.multiselectable {
+      node.set_multiselectable();
+    }
+    if let Some((rows, columns)) = n.table_size {
+      node.set_row_count(rows);
+      node.set_column_count(columns);
+    }
+    if let Some(column) = n.column_index {
+      node.set_column_index(column);
+    }
+    match n.sorted {
+      Some(SortOrder::Ascending) => {
+        node.set_sort_direction(SortDirection::Ascending)
+      },
+      Some(SortOrder::Descending) => {
+        node.set_sort_direction(SortDirection::Descending)
+      },
+      None => {},
+    }
+    if n.modal {
+      node.set_modal();
+    }
+    if n.disabled {
+      node.set_disabled();
+    }
+    if let Some(name) = &n.label {
+      node.set_label(name.clone());
+    }
+    if is_text_input(role) {
+      if n.actions.edit_text {
+        node.add_action(Action::SetTextSelection);
+        node.add_action(Action::ReplaceSelectedText);
+        node.add_action(Action::SetValue);
+      }
+      if let (Some(field), Some(key)) = (n.text_field, &n.key) {
+        self.text_input(key, field, &mut node);
+      }
+    } else if !named_by_contents(role) {
+      node.set_children(node_ids(&n.children));
+    }
+    if let Some(c) = n.active_descendant {
+      node.set_active_descendant(node_id(c));
+    }
+    node
   }
 
   /// A text field: its value, a text run for each line, and the selection.
   fn text_input(
     &mut self,
-    index: usize,
-    e: &Element,
+    key: &BoxKey,
+    field: TextField,
     node: &mut Node,
   ) {
-    if e.on_access.is_some() {
-      node.add_action(Action::SetTextSelection);
-      node.add_action(Action::ReplaceSelectedText);
-      node.add_action(Action::SetValue);
-    }
-    let Some(t) = dovetail_layout::first_text(self.boxes, index) else {
-      return;
-    };
-    let text_box = &self.boxes[t];
+    let boxes = self.layout.boxes();
+    let text_box = &boxes[field.text_box];
     let Content::Text { text, .. } = &text_box.content else {
       return;
     };
     node.set_value(text.to_string());
-    let key = &self.boxes[index].key;
     let font = text_box.content.text_style().expect("text");
     let line_height = self.measure.line_height(font);
     let lines: Vec<&str> = text.split('\n').collect();
@@ -454,9 +298,9 @@ impl Builder<'_> {
       let line_x = self
         .measure
         .line_start(line, font, text_box.rect.width);
-      let boxes = self.measure.graphemes(line, font);
+      let graphemes = self.measure.graphemes(line, font);
       let place = |at: usize| {
-        boxes
+        graphemes
           .iter()
           .find(|b| b.0 == at)
           .map_or((0.0, 0.0), |b| (b.1, b.2 - b.1))
@@ -490,7 +334,7 @@ impl Builder<'_> {
         .filter_map(|i| u8::try_from(i).ok())
         .collect();
 
-      let run_id = node_id(key, row as u32 + 1);
+      let run_id = node_id(AccessId::of(key, row as u32 + 1));
       let mut run = Node::new(AkRole::TextRun);
       run.set_value(value);
       run.set_character_lengths(lengths);
@@ -521,7 +365,7 @@ impl Builder<'_> {
     }
     node.set_children(runs);
 
-    if let Some(cursor) = e.text_cursor {
+    if let Some((anchor, caret)) = field.selection {
       let position = |byte: usize| {
         // The run that holds the byte; a byte at a line's end belongs to
         // that line, before its line break.
@@ -538,8 +382,8 @@ impl Builder<'_> {
         TextPosition { node: *run, character_index: index }
       };
       node.set_text_selection(TextSelection {
-        anchor: position(cursor.anchor),
-        focus: position(cursor.caret),
+        anchor: position(anchor),
+        focus: position(caret),
       });
     }
   }
@@ -563,47 +407,69 @@ impl Access {
     scale: f32,
     measure: &dyn Measure,
   ) -> TreeUpdate {
-    let boxes = layout.boxes();
-    let mut builder = Builder {
-      boxes,
+    let tree = dovetail_session::access_tree(layout, focus, title);
+    let mut t = Translator {
       layout,
       measure,
-      description: None,
-      nodes: Vec::new(),
+      nodes: Vec::with_capacity(tree.nodes.len()),
       targets: HashMap::new(),
-      by_key: HashMap::new(),
-      current: None,
     };
-    // The tree, then the layers above it, such as open menus.
-    let mut children = if boxes.is_empty() {
-      Vec::new()
-    } else {
-      builder.visit(0)
-    };
-    for &layer in layout.layers() {
-      children.extend(builder.visit(layer));
+    for n in &tree.nodes {
+      let id = node_id(n.id);
+      let node = match n.kind {
+        AccessKind::Window => {
+          let mut window = Node::new(AkRole::Window);
+          if let Some(title) = &n.label {
+            window.set_label(title.clone());
+          }
+          // Bounds are in logical pixels; the scale makes them physical.
+          window.set_transform(Affine::scale(f64::from(scale)));
+          window.set_children(node_ids(&n.children));
+          window
+        },
+        AccessKind::Label => {
+          let mut node = Node::new(AkRole::Label);
+          if let Some(value) = &n.value {
+            node.set_value(value.clone());
+          }
+          if let Some(bounds) = n.bounds {
+            node.set_bounds(rect(bounds));
+          }
+          node
+        },
+        AccessKind::Image => {
+          let mut node = Node::new(AkRole::Image);
+          if let Some(label) = &n.label {
+            node.set_label(label.clone());
+          }
+          if let Some(bounds) = n.bounds {
+            node.set_bounds(rect(bounds));
+          }
+          node
+        },
+        AccessKind::Element(role) => {
+          let node = t.element(n, role);
+          if let Some(key) = &n.key {
+            t.targets.insert(id, Target::Element(key.clone()));
+          }
+          node
+        },
+      };
+      t.nodes.push((id, node));
     }
-    let mut window = Node::new(AkRole::Window);
-    window.set_label(title.to_owned());
-    // Bounds are in logical pixels; the scale makes them physical.
-    window.set_transform(Affine::scale(f64::from(scale)));
-    window.set_children(children);
-    builder.nodes.push((ROOT, window));
 
-    let focus = focus
-      .and_then(|k| builder.by_key.get(k).copied())
-      .unwrap_or(ROOT);
+    let focus = node_id(tree.focus);
     let mut changed = Vec::new();
-    let mut sent = HashMap::with_capacity(builder.nodes.len());
-    for (id, node) in builder.nodes {
+    let mut sent = HashMap::with_capacity(t.nodes.len());
+    for (id, node) in t.nodes {
       if self.sent.get(&id) != Some(&node) {
         changed.push((id, node.clone()));
       }
       sent.insert(id, node);
     }
     self.sent = sent;
-    self.targets = builder.targets;
-    let tree = std::mem::take(&mut self.fresh).then(|| {
+    self.targets = t.targets;
+    let info = std::mem::take(&mut self.fresh).then(|| {
       let mut info = TreeInfo::new(ROOT);
       info.toolkit_name = Some("Dovetail UI".into());
       info.toolkit_version = Some(env!("CARGO_PKG_VERSION").into());
@@ -611,7 +477,7 @@ impl Access {
     });
     TreeUpdate {
       nodes: changed,
-      tree,
+      tree: info,
       tree_id: TreeId::ROOT,
       focus,
     }

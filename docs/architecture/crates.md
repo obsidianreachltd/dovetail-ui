@@ -10,6 +10,8 @@ This is a list of possible packages, not a commitment. The first release uses th
 | `dovetail-core` | Component contracts, identity, events, reactive state |
 | `dovetail-macros` | Declarative syntax and component expansion |
 | `dovetail-layout` | Sizing, alignment, layout primitives, scrolling and scrollbars |
+| `dovetail-session` | One window's component tree, layout, focus and input, with no window ([D0027](../decisions/D0027-testing-foundations.md)) |
+| `dovetail-testing` | Tests for applications: find elements, send input through the window, and move time, with no window or GPU ([D0027](../decisions/D0027-testing-foundations.md)) |
 | `dovetail-render` | Rendering interfaces and GPU integration |
 | `dovetail-desktop` | Windows, event loop, input, platform integration |
 | `dovetail-controls` | Buttons, toggles, check boxes, radio buttons, drop-downs, number fields, sliders, tooltips, tabs, indicators |
@@ -35,6 +37,7 @@ An arrow means "depends on".
 ```text
 dovetail-ui (facade) ──► dovetail-controls ──► dovetail-core
         ├──► dovetail-desktop ──► dovetail-render ──► dovetail-layout ──► dovetail-core
+        │            └──► dovetail-session ──► dovetail-layout
         ├──► dovetail-macros  (procedural macros, no runtime dependencies)
         └──► dovetail-core
 
@@ -54,6 +57,8 @@ External foundations:
 - From M10, `dovetail-docking` depends on `dovetail-core`, `dovetail-macros` and, from M14, `dovetail-theme`, and the facade re-exports it as `dovetail::docking`. Floating windows are opened through `dovetail-core`'s window host, which `dovetail-desktop` installs, so the docking crate does not depend on the desktop crate either.
 - From M16, `dovetail-data` depends on `dovetail-core`, `dovetail-controls`, `dovetail-commands` (for `History`, D0022), `dovetail-macros` and `dovetail-theme`, and the facade re-exports it as `dovetail::data`. It learns where its views are scrolled to through `Element::on_scroll`, so it does not depend on the layout or desktop crates either.
 - From M17, `dovetail-image` (decoders, animation, icons, the icon set: D0024) depends only on `dovetail-core`, for `Picture` and `View`. The facade re-exports it as `dovetail::image`. `dovetail-render` uses it to draw pictures, and `dovetail-controls`, `dovetail-commands` and `dovetail-data` use it for icons. Core knows a picture only by its size, fit, colour and label; what it draws is a value only the renderer opens.
+- From M20, `dovetail-session` depends on `dovetail-core` and `dovetail-layout` only, with no winit, wgpu or AccessKit ([D0027](../decisions/D0027-testing-foundations.md)). It holds what `dovetail-desktop` used to keep for each window: the component tree, layout, focus, hover, presses, scroll bars, the caret blink, and size and scroll reports. `dovetail-desktop` depends on it and gives each window a `Session`. The facade does not re-export it: tests reach it through `dovetail-testing`.
+- From M20, `dovetail-testing` depends on `dovetail-core`, `dovetail-layout` and `dovetail-session`. Applications add it as a dev-dependency; the facade does not re-export it, so test code stays out of applications ([D0027](../decisions/D0027-testing-foundations.md)). Its `pictures` feature adds `dovetail-render` and `dovetail-image`, to compare pictures, and its `windows` feature adds `dovetail-desktop`, for real-window tests (D0026). `dovetail-controls` uses it in its tests, and the counter and form examples in their self-tests. No framework package depends on it outside its tests.
 - From M08, `dovetail-commands` depends on `dovetail-core`, `dovetail-controls` and `dovetail-macros`, and the facade re-exports it as `dovetail::commands`. The system menu bar is reached through `dovetail-core`'s `NativeMenus` host, which `dovetail-desktop` installs, so the commands crate does not depend on the desktop crate.
 
 ## Rules

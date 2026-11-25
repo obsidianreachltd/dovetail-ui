@@ -1,16 +1,15 @@
 use std::cell::Cell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use dovetail_core::{
-  Callback, Element, ImeEvent, KeyCode, KeyEvent, Modifiers, NamedKey,
-  PointerButton, PointerEvent, PointerKind, Tree, View, WheelEvent,
-  WindowPlace,
+  Element, ImeEvent, KeyCode, KeyEvent, Modifiers, NamedKey, PointerButton,
+  PointerKind, View, WindowPlace,
 };
-use dovetail_layout::{BoxKey, Layout, LayoutBox, Rect};
+use dovetail_layout::{LayoutBox, Rect};
 use dovetail_render::{
   Canvas, Color, FrameOutcome, Gpu, GpuError, Painter, PhysicalSize,
   WindowSurface, font_measure,
@@ -25,8 +24,13 @@ use winit::window::{Window, WindowAttributes};
 
 mod lifecycle;
 mod multi;
+mod pumped;
 
-use crate::access::{Access, Request};
+pub use pumped::Pumped;
+
+use dovetail_session::{Session, Settings, WHEEL_STEP};
+
+use crate::access::Access;
 use crate::dev::DevState;
 use crate::geometry::{LogicalSize, WindowInfo};
 
@@ -39,6 +43,9 @@ pub enum Error {
   Window(winit::error::OsError),
   /// The GPU could not be set up.
   Gpu(GpuError),
+  /// A pumped event loop ended, with this code, or did not do the work
+  /// asked of it (-1).
+  Ended(i32),
 }
 
 impl fmt::Display for Error {
@@ -50,6 +57,7 @@ impl fmt::Display for Error {
       Error::EventLoop(e) => write!(f, "event loop error: {e}"),
       Error::Window(e) => write!(f, "could not create a window: {e}"),
       Error::Gpu(e) => write!(f, "{e}"),
+      Error::Ended(code) => write!(f, "the event loop ended ({code})"),
     }
   }
 }
@@ -275,7 +283,7 @@ impl Context<'_> {
     window: WindowId,
   ) -> Option<&Element> {
     let ui = self.shell.windows.get(&window.0)?.ui.as_ref()?;
-    ui.layout.element(ui.focus.as_ref()?)
+    ui.session.focused_element()
   }
 
   /// The scrollbars a UI window shows now, each with whether it is wide,
@@ -289,8 +297,45 @@ impl Context<'_> {
       .windows
       .get(&window.0)
       .and_then(|e| e.ui.as_ref())
-      .map(UiWindow::bars_to_paint)
+      .map(|ui| ui.session.scrollbars())
       .unwrap_or_default()
+  }
+
+  /// What a window has received from the system and the GPU: requests to
+  /// draw, frames shown and skipped, and whether it was last hidden or had
+  /// the keyboard. For tests that wait in vain (M20).
+  pub fn window_stats(
+    &self,
+    window: WindowId,
+  ) -> Option<WindowStats> {
+    Some(self.shell.windows.get(&window.0)?.stats)
+  }
+
+  /// A UI window's session: its components, layout, focus and input
+  /// state (D0027). For tests.
+  pub fn ui_session(
+    &self,
+    window: WindowId,
+  ) -> Option<&dovetail_session::Session> {
+    Some(
+      &self
+        .shell
+        .windows
+        .get(&window.0)?
+        .ui
+        .as_ref()?
+        .session,
+    )
+  }
+
+  /// Brings a window to the front and gives it the keyboard.
+  pub fn focus_window(
+    &self,
+    window: WindowId,
+  ) {
+    if let Some(entry) = self.shell.windows.get(&window.0) {
+      entry.window.focus_window();
+    }
   }
 
   /// True while something is being dragged (M10).
@@ -319,8 +364,6 @@ impl Shell {
     // Hidden until AccessKit's adapter is in place, as it requires.
     let title = options.title.clone();
     let id = self.open_window(event_loop, options, false)?;
-    let mut tree = Tree::new();
-    tree.mount_within(root, context);
     let entry = self
       .windows
       .get_mut(&id.0)
@@ -331,39 +374,24 @@ impl Shell {
       self.proxy.clone(),
     );
     entry.window.set_visible(true);
+    let settings = Settings {
+      caret_blink: blink_rate(),
+      overlay_scrollbars: crate::platform::overlay_scrollbars,
+    };
+    let mut session =
+      Session::new(title, root, context, settings, Box::new(font_measure()));
+    session.set_active(entry.window.has_focus());
     entry.ui = Some(UiWindow {
-      title,
+      session,
       adapter,
       access: Access::default(),
-      tree,
-      layout: Layout::new(),
       canvas: None,
-      cursor: (f32::NAN, f32::NAN),
-      pressed: None,
-      focus: None,
-      focus_visible: false,
       ring: None,
-      captured: None,
-      last_click: None,
       ime_allowed: false,
       ime_area: None,
-      caret_on: true,
-      blink_at: None,
-      focus_history: Vec::new(),
-      autofocused: HashSet::new(),
       painted_caret: true,
       waiting: None,
-      active: entry.window.has_focus(),
-      sizes: HashMap::new(),
-      viewports: HashMap::new(),
-      guard: None,
-      style: dovetail_core::WindowStyle::default(),
-      hovered: Vec::new(),
-      within: Vec::new(),
-      bar_hot: None,
-      bar_drag: None,
       painted_bars: Vec::new(),
-      bars_hide_at: None,
     });
     Ok(id)
   }
@@ -381,8 +409,8 @@ impl Shell {
       .get_mut(&id)
       .and_then(|e| e.ui.as_mut())
     {
-      ui.cursor = (x, y);
-      if !dragging && ui.moved(modifiers) {
+      ui.session.set_cursor((x, y));
+      if !dragging && ui.session.pointer_moved(modifiers) {
         self.windows[&id].window.request_redraw();
       }
     }
@@ -402,13 +430,9 @@ impl Shell {
   ) {
     if let Some(entry) = self.windows.get_mut(&id)
       && let Some(ui) = entry.ui.as_mut()
+      && ui.session.press(modifiers, button)
     {
-      let before = (ui.focus.clone(), ui.focus_visible);
-      ui.press(modifiers, button);
-      if (ui.focus.clone(), ui.focus_visible) != before || ui.bar_hot.is_some()
-      {
-        entry.window.request_redraw();
-      }
+      entry.window.request_redraw();
     }
     self.pick_up_drag(id);
   }
@@ -429,7 +453,7 @@ impl Shell {
       .get_mut(&id)
       .and_then(|e| e.ui.as_mut())
     {
-      ui.release(modifiers, button);
+      ui.session.release(modifiers, button);
     }
   }
 }
@@ -445,7 +469,7 @@ impl Context<'_> {
       .windows
       .get(&window.0)
       .and_then(|e| e.ui.as_ref())
-      .map_or(&[], |ui| ui.layout.boxes())
+      .map_or(&[], |ui| ui.session.layout().boxes())
   }
 
   /// A UI window's pixels as last painted (M17): its width and height in
@@ -487,7 +511,10 @@ impl Context<'_> {
     let Some(entry) = self.shell.windows.get_mut(&window.0) else {
       return false;
     };
-    let used = entry.ui.as_mut().is_some_and(|ui| ui.key(event));
+    let used = entry
+      .ui
+      .as_mut()
+      .is_some_and(|ui| ui.session.key(event));
     if used {
       entry.window.request_redraw();
     }
@@ -526,8 +553,9 @@ impl Context<'_> {
       return false;
     };
     let scrolled = entry.ui.as_mut().is_some_and(|ui| {
-      ui.cursor = (x, y);
-      ui.wheel(dx, dy, false, Modifiers::default())
+      ui.session.set_cursor((x, y));
+      ui.session
+        .wheel(dx, dy, false, Modifiers::default())
     });
     if scrolled {
       entry.window.request_redraw();
@@ -549,8 +577,9 @@ impl Context<'_> {
       return false;
     };
     let used = entry.ui.as_mut().is_some_and(|ui| {
-      ui.cursor = (x, y);
-      ui.wheel(0.0, steps * WHEEL_STEP, true, modifiers)
+      ui.session.set_cursor((x, y));
+      ui.session
+        .wheel(0.0, steps * WHEEL_STEP, true, modifiers)
     });
     if used {
       entry.window.request_redraw();
@@ -569,7 +598,10 @@ impl Context<'_> {
     let Some(entry) = self.shell.windows.get_mut(&window.0) else {
       return false;
     };
-    let used = entry.ui.as_mut().is_some_and(|ui| ui.ime(event));
+    let used = entry
+      .ui
+      .as_mut()
+      .is_some_and(|ui| ui.session.ime(event));
     if used {
       entry.window.request_redraw();
     }
@@ -588,8 +620,7 @@ impl Context<'_> {
       .windows
       .get(&window.0)
       .and_then(|e| e.ui.as_ref())
-      .filter(|ui| ui.blink_at.is_some())
-      .map(|ui| ui.caret_on)
+      .and_then(|ui| ui.session.caret_blink())
   }
 
   /// True when a UI window has its input method turned on, because the
@@ -652,7 +683,7 @@ impl Context<'_> {
           .get_mut(&window.0)
           .and_then(|e| e.ui.as_mut())
         {
-          ui.cursor = (x, y);
+          ui.session.set_cursor((x, y));
         }
         self
           .shell
@@ -680,14 +711,11 @@ impl Context<'_> {
     &mut self,
     window: WindowId,
   ) {
-    if let Some(ui) = self
-      .shell
-      .windows
-      .get_mut(&window.0)
-      .and_then(|e| e.ui.as_mut())
+    if let Some(entry) = self.shell.windows.get_mut(&window.0)
+      && let Some(ui) = entry.ui.as_mut()
+      && ui.session.pointer_left()
     {
-      ui.cursor = (f32::NAN, f32::NAN);
-      ui.update_hover();
+      entry.window.request_redraw();
     }
   }
 
@@ -700,7 +728,7 @@ impl Context<'_> {
     if self.shell.primary == Some(window.0) {
       self.shell.close_hosted();
     }
-    if self.shell.windows.is_empty() {
+    if self.shell.windows.is_empty() && !self.shell.pumped {
       self.event_loop.exit();
     }
   }
@@ -776,7 +804,7 @@ impl Context<'_> {
     self
       .shell
       .wake_at
-      .set(Some(Instant::now() + delay));
+      .set(Some(dovetail_core::now() + delay));
   }
 
   /// The size and display scale of a window, if it is open.
@@ -828,79 +856,51 @@ struct WindowEntry {
   ui: Option<UiWindow>,
   /// Set for a window that a component opened through the window host.
   hosted: Option<multi::Hosted>,
+  /// What the window has received, for tests (M20).
+  stats: WindowStats,
 }
 
-/// A window that shows a component tree.
+/// What a window has received from the system and the GPU, so a test that
+/// waits in vain can say why (M20, D0026).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WindowStats {
+  /// Requests to draw.
+  pub redraws: u64,
+  /// Frames drawn and shown.
+  pub presented: u64,
+  /// Frames asked for but skipped, as when the window could not be seen.
+  pub skipped: u64,
+  /// The last time the system said whether the window is hidden.
+  pub occluded: Option<bool>,
+  /// The last time the system said whether the window has the keyboard.
+  pub focused: Option<bool>,
+}
+
+/// A window that shows a component tree. What it shows and how it answers
+/// input is in its session (D0027); the rest is what the window and its
+/// painting need.
 struct UiWindow {
-  /// The window's title, which names it for assistive tools.
-  title: String,
+  /// The component tree, layout, focus and input state.
+  session: Session,
   /// Connects the window to assistive tools (M07).
   adapter: accesskit_winit::Adapter,
   /// The accessibility tree, as last sent.
   access: Access,
-  tree: Tree,
-  layout: Layout,
   /// Made on the first draw, and again after a resize or device loss.
   canvas: Option<Canvas>,
-  /// The pointer, in logical pixels.
-  cursor: (f32, f32),
-  /// The handler under the pointer when it was pressed.
-  pressed: Option<Callback<()>>,
-  /// The element with keyboard focus.
-  focus: Option<BoxKey>,
-  /// Focus came from the keyboard, so the focus ring is shown.
-  focus_visible: bool,
   /// Where the focus ring was last drawn, so it can be cleared.
   ring: Option<Rect>,
-  /// The element with a pointer handler that the pointer went down on,
-  /// and the click count. It receives moves and the release.
-  captured: Option<(BoxKey, u32, PointerButton)>,
-  /// When and where the last press was, and its click count, for double
-  /// clicks.
-  last_click: Option<(Instant, (f32, f32), u32)>,
   /// The input method is on, because the focused element takes text.
   ime_allowed: bool,
   /// Where the input method was last told the caret is.
   ime_area: Option<Rect>,
-  /// The blinking caret is in its on half.
-  caret_on: bool,
-  /// Elements that had focus before, most recent last, to give focus back
-  /// to when the focused element goes away.
-  focus_history: Vec<BoxKey>,
-  /// The elements that ask for focus when they appear, as last laid out.
-  autofocused: HashSet<BoxKey>,
-  /// When the caret next turns on or off, while it blinks.
-  blink_at: Option<Instant>,
   /// Whether the caret was shown in the last paint.
   painted_caret: bool,
   /// Where images still being uploaded were left out of the last paint
   /// (M17): painted again in the next frame.
   waiting: Option<Rect>,
-  /// The window has the keyboard: it is in front. Carets show only then.
-  active: bool,
-  /// The sizes last told to elements with a size handler.
-  sizes: HashMap<BoxKey, (f32, f32)>,
-  /// The viewports last told to elements with a scroll handler (M16).
-  viewports: HashMap<BoxKey, dovetail_core::Viewport>,
-  /// The close guard of an element in the window, as last laid out (M11).
-  guard: Option<(dovetail_core::CloseGuard, Callback<()>)>,
-  /// How the window looks, from its outermost theme (M14).
-  style: dovetail_core::WindowStyle,
-  /// The elements with a hover handler under the pointer, as last told
-  /// (M15).
-  hovered: Vec<BoxKey>,
-  /// The elements with a focus-within handler that hold focus, as last
-  /// told (M15).
-  within: Vec<BoxKey>,
-  /// The scrollbar under the pointer, by element and direction (M15).
-  bar_hot: Option<(BoxKey, bool)>,
-  /// The scrollbar whose thumb is being dragged, and how far along the
-  /// thumb it was grabbed (M15).
-  bar_drag: Option<(BoxKey, bool, f32)>,
   /// The scrollbars as last painted, each with whether it was wide.
   painted_bars: Vec<(dovetail_layout::Scrollbar, bool)>,
-  /// When scrollbars that show only while scrolling hide again (M15).
-  bars_hide_at: Option<Instant>,
 }
 
 /// When input logging started, if the environment variable
@@ -909,6 +909,7 @@ struct UiWindow {
 fn input_log() -> Option<Instant> {
   thread_local! {
     static START: Option<Instant> =
+      // real time: the input log times what really happened.
       std::env::var_os("DOVETAIL_LOG_INPUT").map(|_| Instant::now());
   }
   START.with(|s| *s)
@@ -946,561 +947,6 @@ fn blink_rate() -> Option<Duration> {
   RATE.with(|r| *r)
 }
 
-/// How long scrollbars that show only while scrolling stay after it stops.
-const BARS_SHOWN_FOR: Duration = Duration::from_millis(1000);
-/// How many times a frame builds and lays out while what layout reports
-/// changes the tree (M16).
-const LAYOUT_PASSES: usize = 4;
-
-/// How far one notch of the mouse wheel scrolls, in logical pixels.
-const WHEEL_STEP: f32 = 48.0;
-
-/// Presses closer together than this in time count as one double click.
-const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(500);
-/// Presses closer together than this, in logical pixels, count as one
-/// double click.
-const DOUBLE_CLICK_DISTANCE: f32 = 4.0;
-
-impl UiWindow {
-  /// Moves focus to `focus`, telling the element that loses it and the one
-  /// that gains it.
-  fn set_focus(
-    &mut self,
-    focus: Option<BoxKey>,
-  ) {
-    if focus == self.focus {
-      return;
-    }
-    let old = std::mem::replace(&mut self.focus, focus);
-    if let Some(old) = &old {
-      self.focus_history.retain(|k| k != old);
-      self.focus_history.push(old.clone());
-      if self.focus_history.len() > 32 {
-        self.focus_history.remove(0);
-      }
-    }
-    let tell = |key: &Option<BoxKey>, focused: bool| {
-      if let Some(on_focus) = key
-        .as_ref()
-        .and_then(|k| self.layout.element(k))
-        .and_then(|e| e.on_focus.as_ref())
-      {
-        on_focus.call(focused);
-      }
-    };
-    tell(&old, false);
-    tell(&self.focus, true);
-    self.update_focus_within();
-  }
-
-  /// Tells elements with a hover handler that the pointer came onto them
-  /// or left them (M15). Run after the pointer moves and after layout,
-  /// since things can move under a still pointer.
-  fn update_hover(&mut self) {
-    let (x, y) = self.cursor;
-    let now = if x.is_nan() || y.is_nan() {
-      Vec::new()
-    } else {
-      self.layout.hover_targets_at(x, y)
-    };
-    if now == self.hovered {
-      return;
-    }
-    let before = std::mem::replace(&mut self.hovered, now);
-    self.tell_changes(&before, |e| e.on_hover.as_ref(), true);
-  }
-
-  /// Tells elements with a focus-within handler that focus came into them
-  /// or went out (M15).
-  fn update_focus_within(&mut self) {
-    let now = self
-      .focus
-      .as_ref()
-      .map(|f| self.layout.focus_within_targets(f))
-      .unwrap_or_default();
-    if now == self.within {
-      return;
-    }
-    let before = std::mem::replace(&mut self.within, now);
-    self.tell_changes(&before, |e| e.on_focus_within.as_ref(), false);
-  }
-
-  /// Calls `handler` with `false` on elements in `before` that are not in
-  /// the new list, then with `true` on new ones.
-  fn tell_changes(
-    &self,
-    before: &[BoxKey],
-    handler: impl Fn(&dovetail_core::Element) -> Option<&Callback<bool>>,
-    hover: bool,
-  ) {
-    let now = if hover { &self.hovered } else { &self.within };
-    let call = |key: &BoxKey, on: bool| {
-      if let Some(h) = self.layout.element(key).and_then(&handler) {
-        h.call(on);
-      }
-    };
-    for key in before.iter().filter(|k| !now.contains(k)) {
-      call(key, false);
-    }
-    for key in now.iter().filter(|k| !before.contains(k)) {
-      call(key, true);
-    }
-  }
-
-  fn press(
-    &mut self,
-    modifiers: Modifiers,
-    button: PointerButton,
-  ) {
-    self.wake_caret();
-    let (x, y) = self.cursor;
-    if self.captured.is_some() || self.bar_drag.is_some() {
-      // Another button is already held; this one is ignored.
-      return;
-    }
-    if button == PointerButton::Primary && self.press_scrollbar(x, y) {
-      return;
-    }
-    if button == PointerButton::Primary {
-      // A click focuses what it lands on, without showing the ring.
-      self.set_focus(self.layout.focusable_at(x, y));
-      self.focus_visible = false;
-      self.pressed = self.layout.hit_test(x, y).cloned();
-    }
-
-    let now = Instant::now();
-    let clicks = match self.last_click {
-      Some((at, (px, py), n))
-        if now.duration_since(at) <= DOUBLE_CLICK_TIME
-          && (px - x).abs() <= DOUBLE_CLICK_DISTANCE
-          && (py - y).abs() <= DOUBLE_CLICK_DISTANCE =>
-      {
-        n + 1
-      },
-      _ => 1,
-    };
-    self.last_click = Some((now, (x, y), clicks));
-    if button == PointerButton::Secondary
-      && let Some(on_menu) = self
-        .layout
-        .context_menu_target_at(x, y)
-        .and_then(|k| self.layout.element(&k))
-        .and_then(|e| e.on_context_menu.clone())
-    {
-      on_menu.call((x, y));
-    }
-    self.captured = self
-      .layout
-      .pointer_target_at(x, y)
-      .map(|key| (key, clicks, button));
-    self.send_pointer(PointerKind::Down, modifiers);
-  }
-
-  /// The wheel over the pointer: an element that handles the wheel gets it
-  /// (as a canvas zooms); otherwise what is under the pointer scrolls by
-  /// (`dx`, `dy`) logical pixels, sideways with Shift. True when something
-  /// used it.
-  fn wheel(
-    &mut self,
-    dx: f32,
-    dy: f32,
-    steps: bool,
-    modifiers: Modifiers,
-  ) -> bool {
-    let (x, y) = self.cursor;
-    if x.is_nan() {
-      return false;
-    }
-    if let Some(key) = self.layout.wheel_target_at(x, y)
-      && let (Some(element), Some(rect)) =
-        (self.layout.element(&key), self.layout.rect_of(&key))
-      && let Some(on_wheel) = element.on_wheel.clone()
-    {
-      on_wheel.call(WheelEvent {
-        x: x - rect.x,
-        y: y - rect.y,
-        dx,
-        dy,
-        steps,
-        modifiers,
-      });
-      return true;
-    }
-    let (dx, dy) = if modifiers.shift && dx == 0.0 {
-      (dy, 0.0)
-    } else {
-      (dx, dy)
-    };
-    let scrolled = self.layout.scroll_by(x, y, dx, dy);
-    if scrolled {
-      self.show_bars();
-    }
-    scrolled
-  }
-
-  /// A press with the main button on a scrollbar (M15): on the thumb it
-  /// starts a drag, and on the track it moves one page towards the
-  /// pointer. True when there was a bar there.
-  fn press_scrollbar(
-    &mut self,
-    x: f32,
-    y: f32,
-  ) -> bool {
-    let Some(bar) = self.layout.scrollbar_at(x, y) else {
-      return false;
-    };
-    let Some(((ox, oy), _)) = self.layout.scroll_extent(&bar.key) else {
-      return false;
-    };
-    let (along, start, length) = if bar.vertical {
-      (y, bar.thumb.y, bar.thumb.height)
-    } else {
-      (x, bar.thumb.x, bar.thumb.width)
-    };
-    if (start..start + length).contains(&along) {
-      self.bar_drag = Some((bar.key.clone(), bar.vertical, along - start));
-    } else {
-      let page = if along < start { -bar.page } else { bar.page };
-      if bar.vertical {
-        self
-          .layout
-          .scroll_to(&bar.key, None, Some(oy + page));
-      } else {
-        self
-          .layout
-          .scroll_to(&bar.key, Some(ox + page), None);
-      }
-    }
-    self.bar_hot = Some((bar.key, bar.vertical));
-    self.show_bars();
-    true
-  }
-
-  /// Drags a scrollbar's thumb to the pointer. True when it moved.
-  fn drag_scrollbar(&mut self) -> bool {
-    let Some((key, vertical, grab)) = self.bar_drag.clone() else {
-      return false;
-    };
-    let (x, y) = self.cursor;
-    let Some(bar) = self
-      .layout
-      .scrollbars()
-      .into_iter()
-      .find(|b| b.key == key && b.vertical == vertical)
-    else {
-      return false;
-    };
-    let Some((_, (max_x, max_y))) = self.layout.scroll_extent(&key) else {
-      return false;
-    };
-    self.show_bars();
-    if vertical {
-      let offset = bar.offset_for(y - grab - bar.track.y, max_y);
-      self.layout.scroll_to(&key, None, Some(offset))
-    } else {
-      let offset = bar.offset_for(x - grab - bar.track.x, max_x);
-      self.layout.scroll_to(&key, Some(offset), None)
-    }
-  }
-
-  /// Shows scrollbars that show only while scrolling, for a second.
-  fn show_bars(&mut self) {
-    if crate::platform::overlay_scrollbars() {
-      self.bars_hide_at = Some(Instant::now() + BARS_SHOWN_FOR);
-    }
-  }
-
-  /// The scrollbars to paint now, each with whether it is wide.
-  fn bars_to_paint(&self) -> Vec<(dovetail_layout::Scrollbar, bool)> {
-    let overlay = crate::platform::overlay_scrollbars();
-    let shown = self.bars_hide_at.is_some()
-      || self.bar_drag.is_some()
-      || self.bar_hot.is_some();
-    if overlay && !shown {
-      return Vec::new();
-    }
-    let dragged = self.bar_drag.as_ref().map(|d| (&d.0, d.1));
-    let hot = self.bar_hot.as_ref().map(|h| (&h.0, h.1));
-    self
-      .layout
-      .scrollbars()
-      .into_iter()
-      .map(|b| {
-        let this = Some((&b.key, b.vertical));
-        let wide = this == dragged || this == hot;
-        (b, wide)
-      })
-      .collect()
-  }
-
-  /// After a layout: an element that asks for focus and has just appeared
-  /// takes it; otherwise, if the focused element went away, focus goes back
-  /// to the one focused before it that is still there.
-  fn settle_focus(&mut self) {
-    let wanting: Vec<BoxKey> = self
-      .layout
-      .boxes()
-      .iter()
-      .filter(|b| {
-        matches!(&b.content, dovetail_layout::Content::Element(e) if e.autofocus)
-      })
-      .map(|b| b.key.clone())
-      .collect();
-    let new = wanting
-      .iter()
-      .find(|k| !self.autofocused.contains(*k) && self.layout.can_focus(k))
-      .cloned();
-    self.autofocused = wanting.into_iter().collect();
-    if let Some(key) = new {
-      self.set_focus(Some(key));
-      self.focus_visible = true;
-      return;
-    }
-    if self
-      .focus
-      .as_ref()
-      .is_some_and(|f| !self.layout.can_focus(f))
-    {
-      // The focused element is gone: it is not kept in the history.
-      self.focus = None;
-      while let Some(previous) = self.focus_history.pop() {
-        if self.layout.can_focus(&previous) {
-          self.set_focus(Some(previous));
-          return;
-        }
-      }
-    }
-  }
-
-  /// Carries out a request from an assistive tool.
-  fn carry_out(
-    &mut self,
-    request: Request,
-  ) {
-    self.wake_caret();
-    match request {
-      Request::Focus(key) => {
-        if self.layout.can_focus(&key) {
-          self.set_focus(Some(key));
-          self.focus_visible = true;
-        }
-      },
-      Request::Click(key) => {
-        if let Some(on_press) = self
-          .layout
-          .element(&key)
-          .and_then(|e| e.on_press.clone())
-        {
-          on_press.call(());
-        }
-      },
-      Request::Edit(key, action) => {
-        if let Some(on_access) = self
-          .layout
-          .element(&key)
-          .and_then(|e| e.on_access.clone())
-        {
-          on_access.call(action);
-        }
-      },
-    }
-  }
-
-  /// Shows the caret and starts its blink again, as after typing or a
-  /// click, so it does not vanish while in use.
-  fn wake_caret(&mut self) {
-    self.caret_on = true;
-    self.blink_at = None;
-  }
-
-  /// True when the focused element has a caret showing.
-  fn has_caret(&self) -> bool {
-    self
-      .focus
-      .as_ref()
-      .and_then(|f| self.layout.element(f))
-      .and_then(|e| e.text_cursor)
-      .is_some_and(|c| c.show_caret)
-  }
-
-  /// True when the focused element takes text from an input method.
-  fn wants_ime(&self) -> bool {
-    self
-      .focus
-      .as_ref()
-      .and_then(|f| self.layout.element(f))
-      .is_some_and(|e| e.on_ime.is_some())
-  }
-
-  /// Passes input method text to the focused element. True when it took
-  /// it.
-  fn ime(
-    &mut self,
-    event: ImeEvent,
-  ) -> bool {
-    self.wake_caret();
-    match self
-      .focus
-      .as_ref()
-      .and_then(|f| self.layout.element(f))
-      .and_then(|e| e.on_ime.as_ref())
-    {
-      Some(on_ime) => {
-        on_ime.call(event);
-        true
-      },
-      None => false,
-    }
-  }
-
-  /// Passes the pointer to the captured element, if there is one.
-  fn send_pointer(
-    &self,
-    kind: PointerKind,
-    modifiers: Modifiers,
-  ) {
-    let Some((key, clicks, button)) = &self.captured else {
-      return;
-    };
-    let (Some(element), Some(rect)) =
-      (self.layout.element(key), self.layout.rect_of(key))
-    else {
-      return;
-    };
-    let Some(handler) = &element.on_pointer else {
-      return;
-    };
-    let (x, y) = self.cursor;
-    if x.is_nan() || y.is_nan() {
-      return;
-    }
-    handler.handle(&PointerEvent {
-      kind,
-      button: *button,
-      x: x - rect.x,
-      y: y - rect.y,
-      window_x: x,
-      window_y: y,
-      text_at: self.layout.text_at(key, x, y, &font_measure()),
-      modifiers,
-      clicks: *clicks,
-    });
-  }
-
-  /// The pointer moved. True when a scrollbar changed, so the window must
-  /// be drawn again.
-  fn moved(
-    &mut self,
-    modifiers: Modifiers,
-  ) -> bool {
-    self.send_pointer(PointerKind::Move, modifiers);
-    self.update_hover();
-    let (x, y) = self.cursor;
-    let hot = match &self.bar_drag {
-      Some((key, vertical, _)) => Some((key.clone(), *vertical)),
-      None if x.is_nan() => None,
-      None => self
-        .layout
-        .scrollbar_at(x, y)
-        .map(|b| (b.key, b.vertical)),
-    };
-    let changed = hot != self.bar_hot;
-    self.bar_hot = hot;
-    self.drag_scrollbar() || changed
-  }
-
-  /// A click happens when the pointer is released over the handler it was
-  /// pressed on.
-  fn release(
-    &mut self,
-    modifiers: Modifiers,
-    button: PointerButton,
-  ) {
-    if button == PointerButton::Primary && self.bar_drag.take().is_some() {
-      return;
-    }
-    if self
-      .captured
-      .as_ref()
-      .is_some_and(|c| c.2 == button)
-    {
-      self.send_pointer(PointerKind::Up, modifiers);
-      self.captured = None;
-    }
-    if button != PointerButton::Primary {
-      return;
-    }
-    let Some(pressed) = self.pressed.take() else {
-      return;
-    };
-    if self.layout.hit_test(self.cursor.0, self.cursor.1) == Some(&pressed) {
-      pressed.call(());
-    }
-  }
-
-  /// Offers a key to the window: Tab and Shift+Tab move focus, and other
-  /// keys go to the focused element and its parents. Returns whether the
-  /// window used the key.
-  fn key(
-    &mut self,
-    event: &KeyEvent,
-  ) -> bool {
-    self.wake_caret();
-    let m = event.modifiers;
-    if event.is(NamedKey::Tab) && !m.control && !m.alt && !m.meta {
-      let next = self
-        .layout
-        .focus_next(self.focus.as_ref(), m.shift);
-      self.set_focus(next);
-      self.focus_visible = true;
-      return true;
-    }
-    // The Menu key and Shift+F10 open a context menu below the focused
-    // element (M15).
-    let menu_key = event.is(NamedKey::ContextMenu)
-      || (event.is(NamedKey::F10) && m.shift && !m.control && !m.alt);
-    if menu_key
-      && let Some(focus) = self.focus.clone()
-      && let Some(key) = self.layout.context_menu_target_for(&focus)
-      && let Some(on_menu) = self
-        .layout
-        .element(&key)
-        .and_then(|e| e.on_context_menu.clone())
-    {
-      let r = self.layout.rect_of(&focus).unwrap_or_default();
-      on_menu.call((r.x, r.y + r.height));
-      return true;
-    }
-    self
-      .layout
-      .dispatch_key(self.focus.as_ref(), event)
-  }
-
-  /// The focus ring to draw: just outside the focused element, when focus
-  /// came from the keyboard.
-  fn focus_ring(&self) -> Option<(Rect, f32)> {
-    if !self.focus_visible {
-      return None;
-    }
-    let (r, radius) = self.layout.focus_ring(self.focus.as_ref()?)?;
-    let out = FOCUS_RING_GAP + FOCUS_RING_WIDTH;
-    Some((
-      Rect::new(
-        r.x - out,
-        r.y - out,
-        r.width + 2.0 * out,
-        r.height + 2.0 * out,
-      ),
-      radius + out,
-    ))
-  }
-}
-
-/// Space between an element and its focus ring, in logical pixels.
-const FOCUS_RING_GAP: f32 = 1.0;
-/// Width of the focus ring, in logical pixels.
-const FOCUS_RING_WIDTH: f32 = 2.0;
-
 impl WindowEntry {
   fn info(&self) -> WindowInfo {
     WindowInfo {
@@ -1534,6 +980,9 @@ struct Shell {
   drag: Option<multi::DragState>,
   /// Windows that components asked for (M10).
   host: Rc<multi::HostQueue>,
+  /// The loop is pumped by a test (`Pumped`), which ends it itself:
+  /// closing the last window does not.
+  pumped: bool,
 }
 
 impl Shell {
@@ -1586,9 +1035,16 @@ impl Shell {
       self.primary = Some(id);
     }
     window.request_redraw();
-    self
-      .windows
-      .insert(id, WindowEntry { window, surface, ui: None, hosted: None });
+    self.windows.insert(
+      id,
+      WindowEntry {
+        window,
+        surface,
+        ui: None,
+        hosted: None,
+        stats: WindowStats::default(),
+      },
+    );
     Ok(WindowId(id))
   }
 
@@ -1658,9 +1114,16 @@ impl Shell {
       match surface {
         Ok(surface) => {
           window.request_redraw();
-          self
-            .windows
-            .insert(id, WindowEntry { window, surface, ui, hosted });
+          self.windows.insert(
+            id,
+            WindowEntry {
+              window,
+              surface,
+              ui,
+              hosted,
+              stats: WindowStats::default(),
+            },
+          );
         },
         // Without a surface the window cannot be drawn, so it is closed.
         Err(e) => {
@@ -1704,10 +1167,16 @@ impl From<accesskit_winit::Event> for UserEvent {
   }
 }
 
+/// Work a test queued for the next turn of the loop.
+type Queued = Box<dyn FnOnce(&mut Context<'_>)>;
+
 struct Runner<A: Application> {
   app: A,
   shell: Shell,
   started: bool,
+  /// Work a test queued, run with a `Context` before the loop waits
+  /// (`Pumped`).
+  queued: Vec<Queued>,
 }
 
 impl<A: Application> Runner<A> {
@@ -1747,13 +1216,14 @@ impl<A: Application> Runner<A> {
     };
     match entry.surface.draw_clear(gpu, frame.clear) {
       FrameOutcome::Presented => {
+        entry.stats.presented += 1;
         self.shell.dev.ready();
         self.app.frame_presented(
           &mut Self::context(&mut self.shell, event_loop),
           WindowId(id),
         )
       },
-      FrameOutcome::Skipped => {},
+      FrameOutcome::Skipped => entry.stats.skipped += 1,
       FrameOutcome::Retry => entry.window.request_redraw(),
       FrameOutcome::DeviceLost => {
         shell.recover_gpu();
@@ -1802,45 +1272,23 @@ impl<A: Application> Runner<A> {
     let Some(ui) = entry.ui.as_mut() else {
       return;
     };
-    ui.tree.update();
-    if info.size.is_empty() {
+    let logical = info.logical_size();
+    let shown = (!info.size.is_empty())
+      .then_some((logical.width as f32, logical.height as f32));
+    let update = ui.session.update(shown);
+    if shown.is_none() {
       return;
     }
-    let logical = info.logical_size();
-    // Sizes and scroll positions told after layout can change what is
-    // built, as a long list makes the rows that came into sight (M16,
-    // D0022): build and lay out again, a few times at most, so the frame
-    // shows them. Anything left waits for the next frame.
-    let mut damage: Option<Rect> = None;
-    for pass in 0..LAYOUT_PASSES {
-      if pass > 0 {
-        if !ui.tree.needs_update() {
-          break;
-        }
-        ui.tree.update();
-      }
-      let changes = ui.layout.update(
-        &ui.tree,
-        logical.width as f32,
-        logical.height as f32,
-        &font_measure(),
-      );
-      if let Some(d) = changes.damage_bounds() {
-        damage = Some(damage.map_or(d, |old| old.union(&d)));
-      }
-      ui.settle_focus();
-      ui.update_focus_within();
-      ui.update_hover();
-      if ui.take_focus_request() && !ui.active {
-        entry.window.focus_window();
-      }
-      ui.report_sizes();
-      ui.report_scrolls();
+    let mut damage = update.damage;
+    if update.focus_requested && !ui.session.active() {
+      entry.window.focus_window();
     }
-    if let Some(title) = ui.read_lifecycle() {
+    if let Some(title) = update.title {
       entry.window.set_title(&title);
+      // The accessibility tree names the window by its title.
+      ui.access.reset();
     }
-    if let Some(style) = ui.read_style() {
+    if let Some(style) = update.style {
       // Dark windows get a dark title bar where the system can.
       entry.window.set_theme(Some(if style.dark {
         winit::window::Theme::Dark
@@ -1852,7 +1300,7 @@ impl<A: Application> Runner<A> {
     }
     // The focus ring is drawn over the boxes: repaint where it was and
     // where it is now.
-    let ring = ui.focus_ring();
+    let ring = ui.session.focus_ring();
     if ring.map(|r| r.0) != ui.ring {
       for r in [ui.ring, ring.map(|r| r.0)].into_iter().flatten() {
         damage = Some(damage.map_or(r, |d| d.union(&r)));
@@ -1860,41 +1308,22 @@ impl<A: Application> Runner<A> {
     }
     ui.ring = ring.map(|r| r.0);
 
-    // The caret blinks while the window is in front and the focused
-    // element shows one; otherwise it stays on, or off in the background.
-    let blinking = ui.active && ui.has_caret();
-    match (blinking, blink_rate()) {
-      (true, Some(rate)) => {
-        if ui.blink_at.is_none() {
-          ui.blink_at = Some(Instant::now() + rate);
-        }
-      },
-      _ => {
-        ui.caret_on = true;
-        ui.blink_at = None;
-      },
-    }
     // Assistive tools get what changed, while any is listening.
     {
-      let UiWindow {
-        adapter, access, layout, focus, title, ..
-      } = &mut *ui;
+      let UiWindow { adapter, access, session, .. } = &mut *ui;
       adapter.update_if_active(|| {
         access.update(
-          layout,
-          focus.as_ref(),
-          title,
+          session.layout(),
+          session.focus(),
+          session.title(),
           info.scale_factor as f32,
-          &font_measure(),
+          session.measure(),
         )
       });
     }
-    let caret_visible = ui.active && ui.caret_on;
+    let caret_visible = ui.session.caret_visible();
     if caret_visible != ui.painted_caret
-      && let Some(r) = ui
-        .focus
-        .as_ref()
-        .and_then(|f| ui.layout.caret_rect(f, &font_measure()))
+      && let Some(r) = ui.session.caret_rect()
     {
       // Repaint the caret's pixels, with a pixel to spare for rounding.
       let r = Rect::new(r.x - 1.0, r.y - 1.0, r.width + 2.0, r.height + 2.0);
@@ -1904,7 +1333,7 @@ impl<A: Application> Runner<A> {
 
     // Scrollbars are drawn over the boxes: repaint the old and new tracks
     // when any bar moved, widened or showed (M15).
-    let bars = ui.bars_to_paint();
+    let bars = ui.session.scrollbars();
     if bars != ui.painted_bars {
       for (bar, _) in ui.painted_bars.iter().chain(&bars) {
         damage = Some(damage.map_or(bar.track, |d| d.union(&bar.track)));
@@ -1914,17 +1343,14 @@ impl<A: Application> Runner<A> {
 
     // The input method is on while the focused element takes text, and is
     // told where the caret is, for its candidate window.
-    let wants_ime = ui.wants_ime();
+    let wants_ime = ui.session.wants_ime();
     if wants_ime != ui.ime_allowed {
       entry.window.set_ime_allowed(wants_ime);
       ui.ime_allowed = wants_ime;
       ui.ime_area = None;
     }
     if wants_ime {
-      let area = ui
-        .focus
-        .as_ref()
-        .and_then(|f| ui.layout.caret_rect(f, &font_measure()));
+      let area = ui.session.caret_rect();
       if area.is_some() && area != ui.ime_area {
         let r = area.unwrap_or_default();
         entry.window.set_ime_cursor_area(
@@ -1958,13 +1384,13 @@ impl<A: Application> Runner<A> {
       gpu,
       canvas,
       &dovetail_render::PaintInput {
-        boxes: ui.layout.boxes(),
+        boxes: ui.session.layout().boxes(),
         region,
         scale: info.scale_factor as f32,
-        background: ui.style.background,
+        background: ui.session.style().background,
         focus_ring: ring,
         caret_visible,
-        colors: ui.style,
+        colors: ui.session.style(),
         scrollbars: &bars,
       },
     );
@@ -1975,13 +1401,14 @@ impl<A: Application> Runner<A> {
     }
     match painter.present(gpu, canvas, &mut entry.surface) {
       FrameOutcome::Presented => {
+        entry.stats.presented += 1;
         self.shell.dev.ready();
         self.app.frame_presented(
           &mut Self::context(&mut self.shell, event_loop),
           WindowId(id),
         )
       },
-      FrameOutcome::Skipped => {},
+      FrameOutcome::Skipped => entry.stats.skipped += 1,
       FrameOutcome::Retry => entry.window.request_redraw(),
       FrameOutcome::DeviceLost => self.shell.recover_gpu(),
     }
@@ -2037,7 +1464,7 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
       },
       accesskit_winit::WindowEvent::ActionRequested(request) => {
         if let Some(request) = ui.access.request(&request) {
-          ui.carry_out(request);
+          ui.session.carry_out(request);
           entry.window.request_redraw();
         }
       },
@@ -2049,6 +1476,9 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
     &mut self,
     event_loop: &ActiveEventLoop,
   ) {
+    for work in std::mem::take(&mut self.queued) {
+      work(&mut Self::context(&mut self.shell, event_loop));
+    }
     self.shell.serve_host(event_loop);
     // Components whose close guard agreed close their windows.
     for window in self.shell.guarded_to_close() {
@@ -2064,9 +1494,10 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
       .windows
       .values()
       .filter_map(|e| e.ui.as_ref())
-      .flat_map(|ui| [ui.blink_at, ui.bars_hide_at])
-      .flatten()
+      .filter_map(|ui| ui.session.next_deadline())
       .chain(self.shell.wake_at.get())
+      // Timers from Task::after, such as a tooltip's wait (D0027).
+      .chain(dovetail_core::next_timer())
       .min();
     event_loop.set_control_flow(match next {
       Some(at) => ControlFlow::WaitUntil(at),
@@ -2079,27 +1510,21 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
     event_loop: &ActiveEventLoop,
     _: StartCause,
   ) {
-    let now = Instant::now();
-    // Carets whose time has come turn on or off.
-    if let Some(rate) = blink_rate() {
-      for entry in self.shell.windows.values_mut() {
-        if let Some(ui) = entry.ui.as_mut()
-          && ui.blink_at.is_some_and(|at| at <= now)
-        {
-          ui.caret_on = !ui.caret_on;
-          ui.blink_at = Some(now + rate);
-          entry.window.request_redraw();
-        }
-      }
-    }
-    // Scrollbars that show only while scrolling hide (M15).
+    // The UI thread's clock, which tests can move (D0027).
+    let now = dovetail_core::now();
+    // Carets whose time has come turn on or off, and scrollbars that show
+    // only while scrolling hide (M15).
     for entry in self.shell.windows.values_mut() {
       if let Some(ui) = entry.ui.as_mut()
-        && ui.bars_hide_at.is_some_and(|at| at <= now)
+        && ui.session.tick(now)
       {
-        ui.bars_hide_at = None;
         entry.window.request_redraw();
       }
+    }
+    // Timers that are due fire, as a tooltip's wait ends (D0027). What
+    // they change draws the windows again.
+    if dovetail_core::next_timer().is_some_and(|at| at <= now) {
+      dovetail_core::run_task_messages();
     }
     if self
       .shell
@@ -2126,7 +1551,7 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
     self
       .app
       .started(&mut Self::context(&mut self.shell, event_loop));
-    if self.shell.windows.is_empty() {
+    if self.shell.windows.is_empty() && !self.shell.pumped {
       event_loop.exit();
     }
   }
@@ -2147,7 +1572,12 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
       ui.adapter.process_event(&entry.window, &event);
     }
     match event {
-      WindowEvent::RedrawRequested => self.draw(event_loop, id),
+      WindowEvent::RedrawRequested => {
+        if let Some(entry) = self.shell.windows.get_mut(&id) {
+          entry.stats.redraws += 1;
+        }
+        self.draw(event_loop, id)
+      },
       WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
         self.resized(event_loop, id);
         self.save_placement(id);
@@ -2159,9 +1589,12 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
       },
       // A frame asked for while the window was hidden or minimised is
       // skipped, and nothing asks again. So draw once it can be seen.
-      WindowEvent::Occluded(false) => {
-        if let Some(entry) = self.shell.windows.get(&id) {
-          entry.window.request_redraw();
+      WindowEvent::Occluded(hidden) => {
+        if let Some(entry) = self.shell.windows.get_mut(&id) {
+          entry.stats.occluded = Some(hidden);
+          if !hidden {
+            entry.window.request_redraw();
+          }
         }
       },
       WindowEvent::CloseRequested => {
@@ -2198,6 +1631,9 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
       },
       WindowEvent::ThemeChanged(_) => lifecycle::refresh_appearance(),
       WindowEvent::Focused(active) => {
+        if let Some(entry) = self.shell.windows.get_mut(&id) {
+          entry.stats.focused = Some(active);
+        }
         // Settings may have changed while another window was in front.
         if active {
           lifecycle::refresh_appearance();
@@ -2211,8 +1647,7 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
         if let Some(entry) = self.shell.windows.get_mut(&id)
           && let Some(ui) = entry.ui.as_mut()
         {
-          ui.active = active;
-          ui.wake_caret();
+          ui.session.set_active(active);
           entry.window.request_redraw();
         }
       },
@@ -2232,7 +1667,7 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
               (-(p.x / scale) as f32, -(p.y / scale) as f32, false)
             },
           };
-          if ui.wheel(dx, dy, steps, modifiers) {
+          if ui.session.wheel(dx, dy, steps, modifiers) {
             entry.window.request_redraw();
           }
         }
@@ -2252,7 +1687,7 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
         if let Some(entry) = self.shell.windows.get_mut(&id)
           && let Some(ui) = &mut entry.ui
           && let Some(event) = event
-          && ui.ime(event)
+          && ui.session.ime(event)
         {
           entry.window.request_redraw();
         }
@@ -2273,7 +1708,7 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
           .and_then(|e| e.ui.as_mut())
         {
           Some(ui) => {
-            let used = ui.key(&key);
+            let used = ui.session.key(&key);
             if input_log().is_some() {
               eprintln!("input            used by the window: {used}");
             }
@@ -2304,17 +1739,11 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
       // During a drag the pointer is still followed outside the window.
       WindowEvent::CursorLeft { .. } if self.shell.dragging() => {},
       WindowEvent::CursorLeft { .. } => {
-        if let Some(ui) = self
-          .shell
-          .windows
-          .get_mut(&id)
-          .and_then(|e| e.ui.as_mut())
+        if let Some(entry) = self.shell.windows.get_mut(&id)
+          && let Some(ui) = entry.ui.as_mut()
+          && ui.session.pointer_left()
         {
-          ui.cursor = (f32::NAN, f32::NAN);
-          ui.update_hover();
-          if ui.bar_drag.is_none() && ui.bar_hot.take().is_some() {
-            self.shell.windows[&id].window.request_redraw();
-          }
+          entry.window.request_redraw();
         }
       },
       WindowEvent::MouseInput { state, button, .. } => {
@@ -2344,19 +1773,46 @@ pub fn run(app: impl Application) -> Result<(), Error> {
   let event_loop = EventLoop::<UserEvent>::with_user_event()
     .build()
     .map_err(Error::EventLoop)?;
+  let (shell, _tasks) = start(&event_loop, false);
+  let mut runner = Runner {
+    app,
+    shell,
+    started: false,
+    queued: Vec::new(),
+  };
+  let result = event_loop
+    .run_app(&mut runner)
+    .map_err(Error::EventLoop);
+  finish(&mut runner);
+  result
+}
+
+/// Installs the hooks the framework needs while a loop runs, and makes the
+/// shell. For a test (`pumped`), the clipboard is kept in memory, and there
+/// are no native menus or file dialogs, so nothing reaches the system.
+fn start(
+  event_loop: &EventLoop<UserEvent>,
+  pumped: bool,
+) -> (Shell, lifecycle::TaskWaker) {
   let state_changed = Rc::new(Cell::new(false));
   let flag = Rc::clone(&state_changed);
   dovetail_core::set_on_change(Some(Box::new(move || flag.set(true))));
-  // Controls copy and paste through the system clipboard while it runs.
-  dovetail_core::set_clipboard(crate::platform::clipboard());
-  // Menu bars use the system's own where it has one (macOS).
-  dovetail_core::set_native_menus(crate::platform::native_menus());
-  // Open and Save As use the system's dialogs, owned by the window in
-  // front.
   let dialog_owner = Rc::new(Cell::new(0));
-  dovetail_core::set_file_dialogs(crate::platform::file_dialogs(Rc::clone(
-    &dialog_owner,
-  )));
+  if pumped {
+    dovetail_core::set_clipboard(None);
+    dovetail_core::set_native_menus(None);
+    dovetail_core::set_file_dialogs(None);
+  } else {
+    // Controls copy and paste through the system clipboard while it runs.
+    dovetail_core::set_clipboard(crate::platform::clipboard());
+    // Menu bars use the system's own where it has one (macOS).
+    dovetail_core::set_native_menus(crate::platform::native_menus());
+    // Open and Save As use the system's dialogs, owned by the window in
+    // front.
+    dovetail_core::set_file_dialogs(crate::platform::file_dialogs(Rc::clone(
+      &dialog_owner,
+    )));
+  }
   // Components open windows, such as floating panels, through the host.
   let host = Rc::new(multi::HostQueue::default());
   dovetail_core::set_window_host(Some(Rc::new(multi::DesktopHost(Rc::clone(
@@ -2384,16 +1840,18 @@ pub fn run(app: impl Application) -> Result<(), Error> {
     drag: None,
     host,
     dialog_owner,
+    pumped,
   };
   // Themes follow the system's light or dark mode, accent colour and
   // contrast (M14).
   lifecycle::refresh_appearance();
   // Tasks wake the event loop while it runs.
-  let _tasks = lifecycle::TaskWaker::install(event_loop.create_proxy());
-  let mut runner = Runner { app, shell, started: false };
-  let result = event_loop
-    .run_app(&mut runner)
-    .map_err(Error::EventLoop);
+  let tasks = lifecycle::TaskWaker::install(event_loop.create_proxy());
+  (shell, tasks)
+}
+
+/// Takes the hooks away again, and closes the windows before the GPU.
+fn finish<A: Application>(runner: &mut Runner<A>) {
   dovetail_core::set_on_change(None);
   dovetail_core::set_clipboard(None);
   dovetail_core::set_native_menus(None);
@@ -2401,7 +1859,6 @@ pub fn run(app: impl Application) -> Result<(), Error> {
   // Component trees, canvases and surfaces must go before the GPU.
   runner.shell.windows.clear();
   runner.shell.painter = None;
-  result
 }
 
 /// A winit key press as a Dovetail [`KeyEvent`].

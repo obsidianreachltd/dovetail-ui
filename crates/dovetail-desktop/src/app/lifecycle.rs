@@ -4,52 +4,7 @@
 use dovetail_core::{Callback, CloseGuard};
 use winit::event_loop::ActiveEventLoop;
 
-use super::{Shell, UiWindow, WindowId};
-
-impl UiWindow {
-  /// After layout: reads the title and close guard that the window's
-  /// elements ask for. Returns the new title, when it changed.
-  pub(super) fn read_lifecycle(&mut self) -> Option<String> {
-    let mut title = None;
-    let mut guard = None;
-    for b in self.layout.boxes() {
-      if let dovetail_layout::Content::Element(e) = &b.content {
-        if title.is_none() {
-          title = e.window_title.clone();
-        }
-        if guard.is_none() {
-          guard = e.close_guard.clone();
-        }
-      }
-    }
-    self.guard = guard;
-    let title = title.filter(|t| *t != self.title)?;
-    self.title = title.clone();
-    // The accessibility tree names the window by its title.
-    self.access.reset();
-    Some(title)
-  }
-}
-
-impl UiWindow {
-  /// After layout: the window style the outermost theme asks for, when it
-  /// changed.
-  pub(super) fn read_style(&mut self) -> Option<dovetail_core::WindowStyle> {
-    let style = self
-      .layout
-      .boxes()
-      .iter()
-      .find_map(|b| match &b.content {
-        dovetail_layout::Content::Element(e) => e.window_style,
-        _ => None,
-      })
-      .unwrap_or_default();
-    (style != self.style).then(|| {
-      self.style = style;
-      style
-    })
-  }
-}
+use super::{Shell, WindowId};
 
 /// Reads the system's appearance again and gives it to themes, which
 /// change if it did.
@@ -63,7 +18,13 @@ impl Shell {
     &self,
     id: winit::window::WindowId,
   ) -> Option<(CloseGuard, Callback<()>)> {
-    self.windows.get(&id)?.ui.as_ref()?.guard.clone()
+    self
+      .windows
+      .get(&id)?
+      .ui
+      .as_ref()?
+      .session
+      .close_guard()
   }
 
   /// Gives a request to close a window to its close guard. True when the

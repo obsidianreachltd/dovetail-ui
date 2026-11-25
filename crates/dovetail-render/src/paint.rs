@@ -857,6 +857,14 @@ impl Painter {
     }
   }
 
+  /// Draws text with the built-in font instead of the system's fonts
+  /// from now on, so what is painted is the same on every system, as
+  /// tests that compare pictures need. Its letters measure as
+  /// `dovetail_layout::FixedPitch` does.
+  pub fn use_built_in_font(&mut self) {
+    self.fonts = dovetail_text::Fonts::from_files([]);
+  }
+
   /// Paints `input` into `canvas`. See [`PaintInput`].
   pub fn paint(
     &mut self,

@@ -116,74 +116,11 @@ fn main() {
   layout.update(&tree, width, height, &font_measure());
   painter.paint(&gpu, &mut canvas, &PaintInput::new(layout.boxes(), scale));
   let pixels = painter.read_pixels(&gpu, &canvas);
-  std::fs::write(&path, png(canvas.width(), canvas.height(), &pixels))
-    .expect("write the PNG");
+  let png = dovetail_image::encode_png(&dovetail_image::Rgba {
+    width: canvas.width(),
+    height: canvas.height(),
+    pixels: pixels.into_iter().flatten().collect(),
+  });
+  std::fs::write(&path, png).expect("write the PNG");
   println!("wrote {path} ({} x {})", canvas.width(), canvas.height());
-}
-
-/// A PNG with no compression, written by hand so the example needs no
-/// image library.
-fn png(
-  width: u32,
-  height: u32,
-  pixels: &[[u8; 4]],
-) -> Vec<u8> {
-  let mut raw = Vec::with_capacity(((width * 4 + 1) * height) as usize);
-  for row in pixels.chunks(width as usize) {
-    raw.push(0); // no filter
-    for p in row {
-      raw.extend_from_slice(p);
-    }
-  }
-  // zlib stream of stored (uncompressed) blocks.
-  let mut zlib = vec![0x78, 0x01];
-  let blocks: Vec<&[u8]> = raw.chunks(65_535).collect();
-  for (i, block) in blocks.iter().enumerate() {
-    zlib.push(u8::from(i + 1 == blocks.len()));
-    let len = block.len() as u16;
-    zlib.extend_from_slice(&len.to_le_bytes());
-    zlib.extend_from_slice(&(!len).to_le_bytes());
-    zlib.extend_from_slice(block);
-  }
-  let (mut a, mut b) = (1u32, 0u32);
-  for &byte in &raw {
-    a = (a + u32::from(byte)) % 65_521;
-    b = (b + a) % 65_521;
-  }
-  zlib.extend_from_slice(&((b << 16) | a).to_be_bytes());
-
-  let mut out = vec![
-    0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n',
-  ];
-  let mut header = Vec::new();
-  header.extend_from_slice(&width.to_be_bytes());
-  header.extend_from_slice(&height.to_be_bytes());
-  header.extend_from_slice(&[8, 6, 0, 0, 0]); // 8-bit RGBA
-  chunk(&mut out, b"IHDR", &header);
-  chunk(&mut out, b"IDAT", &zlib);
-  chunk(&mut out, b"IEND", &[]);
-  out
-}
-
-fn chunk(
-  out: &mut Vec<u8>,
-  kind: &[u8; 4],
-  data: &[u8],
-) {
-  out.extend_from_slice(&(data.len() as u32).to_be_bytes());
-  let start = out.len();
-  out.extend_from_slice(kind);
-  out.extend_from_slice(data);
-  let mut crc = 0xffff_ffffu32;
-  for &byte in &out[start..] {
-    crc ^= u32::from(byte);
-    for _ in 0..8 {
-      crc = if crc & 1 == 1 {
-        (crc >> 1) ^ 0xedb8_8320
-      } else {
-        crc >> 1
-      };
-    }
-  }
-  out.extend_from_slice(&(!crc).to_be_bytes());
 }

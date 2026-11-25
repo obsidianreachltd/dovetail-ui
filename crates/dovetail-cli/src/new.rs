@@ -70,10 +70,20 @@ edition = "2024"
 # Dovetail source by path until the crates are published.
 dovetail = {{ package = "dovetail-ui", path = {path} }}
 
+[dev-dependencies]
+# Tests that run the window's components with no window, in `cargo test`.
+dovetail-testing = {{ path = {testing} }}
+
 # This project builds on its own, even inside another Cargo workspace.
 [workspace]
 "#,
     path = toml_string(&dovetail_ui.display().to_string()),
+    testing = toml_string(
+      &dovetail_ui
+        .with_file_name("dovetail-testing")
+        .display()
+        .to_string()
+    ),
   );
   let main_rs = format!(
     r#"use dovetail::prelude::*;
@@ -103,6 +113,23 @@ fn main() {{
     if let Err(error) = dovetail::run({title}, ui! {{ App {{}} }}) {{
         eprintln!("{{error}}");
         std::process::exit(1);
+    }}
+}}
+
+/// Run these with `cargo test`. They run the window's components with no
+/// window, find what is shown as a screen reader would, and click through
+/// the window's own input.
+#[cfg(test)]
+mod tests {{
+    use super::*;
+    use dovetail_testing::{{TestUi, label, text}};
+
+    #[test]
+    fn clicking_the_button_counts() {{
+        let mut ui = TestUi::new(ui! {{ App {{}} }});
+        ui.find(text("Clicked 0 times"));
+        ui.click(label("Click me"));
+        ui.find(text("Clicked 1 times"));
     }}
 }}
 "#,
@@ -204,5 +231,15 @@ mod tests {
       .1;
     assert!(main.contains(r#"dovetail::run("my-app""#));
     assert!(main.contains("format!(\"Clicked {count} times\")"));
+    // A test comes with it, and what it needs: the testing package, next
+    // to dovetail-ui.
+    assert!(cargo.contains("\n[dev-dependencies]\n"), "{cargo}");
+    assert!(
+      cargo.contains(
+        r#"dovetail-testing = { path = "C:\\src\\dovetail\\crates\\dovetail-testing" }"#
+      ),
+      "{cargo}"
+    );
+    assert!(main.contains("fn clicking_the_button_counts()"));
   }
 }

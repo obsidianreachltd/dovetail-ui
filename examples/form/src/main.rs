@@ -8,15 +8,14 @@
 //!   the window does not show what it should.
 
 use std::process::ExitCode;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
-use dovetail::desktop::{
-  Application, Context, Frame, KeyEvent, NamedKey, WindowId, WindowOptions,
-};
-use dovetail::layout::{Content, LayoutBox, first_text};
+use dovetail::desktop::NamedKey;
 use dovetail::prelude::*;
-use dovetail::{Align, Children, Edges, Element, ElementKind, Size, Style};
+use dovetail::{
+  Align, Children, Edges, Element, ElementKind, Role, Size, Style,
+};
+use dovetail_testing::windows::TestWindows;
+use dovetail_testing::{role, text};
 
 /// Grey for hints, red for problems and green for success.
 const MUTED: Color = Color::hex(0x6c6f85);
@@ -227,175 +226,69 @@ fn main() -> ExitCode {
 
 // --- Self-test ---------------------------------------------------------------
 
-/// What each step waits to see before doing the next thing.
-const STEPS: &[&str] = &[
-  "Fill in the form and press Submit.",
-  "Check the email address.",
-  "Sent: Ada Lovelace <ada@example.com>, 2 lines, subscribed.",
-  "Fill in the form and press Submit.",
-];
-
-struct SelfTest {
-  window: Option<WindowId>,
-  step: usize,
-}
-
-fn find_text<'a>(
-  boxes: &'a [LayoutBox],
-  wanted: &str,
-) -> Option<&'a LayoutBox> {
-  boxes.iter().find(
-    |b| matches!(&b.content, Content::Text { text, .. } if &**text == wanted),
-  )
-}
-
-/// The text in each field, in order.
-fn field_texts(boxes: &[LayoutBox]) -> Vec<String> {
-  boxes
-    .iter()
-    .enumerate()
-    .filter(|(_, b)| matches!(&b.content, Content::Element(e) if e.text_cursor.is_some()))
-    .filter_map(|(i, _)| match &boxes[first_text(boxes, i)?].content {
-      Content::Text { text, .. } => Some(text.to_string()),
-      _ => None,
-    })
-    .collect()
-}
-
-/// The fields' boxes, in order.
-fn fields(boxes: &[LayoutBox]) -> Vec<&LayoutBox> {
-  boxes
-    .iter()
-    .filter(
-      |b| matches!(&b.content, Content::Element(e) if e.text_cursor.is_some()),
-    )
-    .collect()
-}
-
-/// Presses each key in turn; `\n` is Enter and `\t` is Tab.
-fn keys(
-  cx: &mut Context<'_>,
-  window: WindowId,
-  text: &str,
-) -> bool {
-  text.chars().all(|c| {
-    let event = match c {
-      '\n' => KeyEvent::named(NamedKey::Enter),
-      '\t' => KeyEvent::named(NamedKey::Tab),
-      ' ' => KeyEvent::character(' '),
-      c => KeyEvent::character(c),
-    };
-    cx.key(window, &event)
-  })
-}
-
-impl Application for SelfTest {
-  fn started(
-    &mut self,
-    cx: &mut Context<'_>,
-  ) {
-    let options = WindowOptions::new("Form self-test");
-    match cx.open_ui_window(options, ui! { App {} }) {
-      Ok(id) => self.window = Some(id),
-      Err(e) => {
-        println!("FAIL  could not open the window: {e}");
-        cx.exit();
-      },
-    }
-    cx.wake_after(Duration::from_secs(15));
-  }
-
-  fn draw(
-    &mut self,
-    _: &mut Context<'_>,
-    _: WindowId,
-    _: &mut Frame,
-  ) {
-  }
-
-  fn frame_presented(
-    &mut self,
-    cx: &mut Context<'_>,
-    window: WindowId,
-  ) {
-    let Some(expected) = STEPS.get(self.step) else {
-      return;
-    };
-    let boxes = cx.ui_boxes(window);
-    if find_text(boxes, expected).is_none() {
-      // An earlier frame; a later one shows the change.
-      return;
-    }
-    println!("PASS  the window shows \"{expected}\"");
-    let email = fields(boxes)[1].rect;
-    let texts = field_texts(boxes);
-    self.step += 1;
-    let ok = match self.step {
-      1 => {
-        // Tab into the name, fill everything in with the keyboard, turn
-        // the toggle on with Space, and press Submit with Enter. The email
-        // has no domain ending yet.
-        keys(cx, window, "\tAda Lovelace\tada@example\tHello\nWorld\t")
-          && cx.key(window, &KeyEvent::named(NamedKey::Space))
-          && keys(cx, window, "\t\n")
-      },
-      2 => {
-        // Click at the end of the email, finish it, and submit again.
-        cx.click(
-          window,
-          email.x + email.width - 4.0,
-          email.y + email.height / 2.0,
-        );
-        keys(cx, window, ".com\t\t\t\n")
-      },
-      3 => {
-        // Tab from Submit to Clear, and press it.
-        keys(cx, window, "\t\n")
-      },
-      _ => {
-        if texts.iter().all(String::is_empty) {
-          PASSED.store(true, Ordering::Relaxed);
-          println!("PASS  Clear emptied every field");
-          println!(
-            "PASS  typing, Tab, Space, Enter, clicks, checks and clearing work"
-          );
-        } else {
-          println!("FAIL  the fields still hold {texts:?}");
-        }
-        cx.close_window(window);
-        true
-      },
-    };
-    if !ok {
-      println!("FAIL  a key was not used at step {}", self.step);
-      cx.exit();
-    }
-  }
-
-  fn woke(
-    &mut self,
-    cx: &mut Context<'_>,
-  ) {
-    let waiting = STEPS.get(self.step).copied().unwrap_or("the end");
-    println!("FAIL  timed out waiting for \"{waiting}\"");
-    cx.exit();
-  }
-}
-
-/// Set when every check passed; the application is gone by the time
-/// `run` returns.
-static PASSED: AtomicBool = AtomicBool::new(false);
-
+/// Fills the form in with the keyboard, corrects the email with a click,
+/// submits it and clears it, checking what the window says after each. It
+/// drives a real window through the window itself (M20, `TestWindows`),
+/// and a failed check panics with what the window shows.
 fn self_test() -> ExitCode {
-  let result = dovetail::desktop::run(SelfTest { window: None, step: 0 });
-  match result {
-    Ok(()) if PASSED.load(Ordering::Relaxed) => ExitCode::SUCCESS,
-    Ok(()) => ExitCode::FAILURE,
-    Err(e) => {
-      eprintln!("form: {e}");
-      ExitCode::FAILURE
-    },
+  let mut t = TestWindows::new();
+  let w = t.open("Form self-test", (800.0, 600.0), ui! { App {} });
+  let shows = |t: &mut TestWindows, wanted: &str| {
+    t.find(w, text(wanted));
+    println!("PASS  the window shows \"{wanted}\"");
+  };
+  shows(&mut t, "Fill in the form and press Submit.");
+  // Tab into the name, fill everything in with the keyboard, turn the
+  // toggle on with Space, and press Submit with Enter. The email has no
+  // domain ending yet.
+  t.type_text(
+    w,
+    "	Ada Lovelace	ada@example	Hello
+World	",
+  );
+  assert!(t.key(w, NamedKey::Space), "Space turned the toggle on");
+  t.type_text(
+    w, "	
+",
+  );
+  shows(&mut t, "Check the email address.");
+  // Click at the end of the email, finish it, and submit again.
+  let email = t
+    .find(w, role(Role::TextInput).label("Email"))
+    .rect();
+  t.click_at(
+    w,
+    (email.x + email.width - 4.0, email.y + email.height / 2.0),
+  );
+  t.type_text(
+    w, ".com			
+",
+  );
+  shows(
+    &mut t,
+    "Sent: Ada Lovelace <ada@example.com>, 2 lines, subscribed.",
+  );
+  // Tab from Submit to Clear, and press it.
+  t.type_text(
+    w, "	
+",
+  );
+  shows(&mut t, "Fill in the form and press Submit.");
+  let mut fields = t.find_all(w, role(Role::TextInput));
+  fields.extend(t.find_all(w, role(Role::MultilineTextInput)));
+  assert_eq!(fields.len(), 3, "three fields");
+  for field in &fields {
+    assert_eq!(
+      field.value().unwrap_or(""),
+      "",
+      "{:?} was cleared",
+      field.label()
+    );
   }
+  println!("PASS  Clear emptied every field");
+  println!("PASS  typing, Tab, Space, Enter, clicks, checks and clearing work");
+  t.close(w);
+  ExitCode::SUCCESS
 }
 
 #[cfg(test)]

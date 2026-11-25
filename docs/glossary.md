@@ -15,15 +15,20 @@ Plain meanings of the terms used in these documents.
 | Event | A message that something happened, usually a user action such as a click. |
 | Facade crate | The `dovetail-ui` package (used in code as `dovetail`), which re-exports the common parts so applications need only one import. |
 | GPU | The graphics processor. Dovetail draws with it through wgpu. |
+| Headless test | A test that runs components with no window or GPU, as `TestUi` does (M20). |
 | Identity | What makes a component the same component between updates, so it keeps its state. |
 | IME | Input method editor. A system tool for typing languages such as Chinese or Japanese, where several key presses build up one character. |
 | Key | A stable value that tells the framework which item in a list is which, even when the list changes. |
 | Procedural macro | Rust code that runs at compile time and writes other Rust code. `ui!` and `#[component]` are procedural macros. |
 | Property | An input given to a component, such as a button's text. |
+| Pumped loop | An event loop that a test drives one step at a time, instead of handing it control, so window tests can run in `cargo test` (D0026). |
 | Reactive state | A value that, when it changes, makes the parts of the UI that use it update. |
 | Render pass | One step of GPU drawing into a frame. |
+| Saved picture | A PNG kept beside a package's tests, which a picture test compares what is painted with (M20). |
+| Session | One window's component tree, layout, focus and input state, with no window (`dovetail-session`, D0027). Tests run one directly. |
 | Shaping | Turning text into the right glyphs and positions. Needed for scripts such as Arabic. |
 | Surface | The area of a window that the GPU draws into. |
+| Test clock | A clock that stands still until a test moves it forward, so timers such as a tooltip's wait are tested without waiting (`TestClock`, D0027). |
 | Validation app | The small PCB-like document editor built to prove that the framework works. |
 | wgpu | A Rust library for drawing with the GPU on all three operating systems. |
 | winit | A Rust library for creating windows and receiving input on all three operating systems. |

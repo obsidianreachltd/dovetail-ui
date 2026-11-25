@@ -1,17 +1,24 @@
-//! Long-running work on other threads (M11).
+//! Long-running work on other threads (M11), and timers (M20).
 //!
 //! [`spawn_task`] runs work on a thread of its own. The work reports
 //! progress and checks whether it was cancelled through a [`TaskContext`].
 //! Progress and the end are given to callbacks on the UI thread when
 //! [`run_task_messages`] is called. The desktop crate calls it when a task
 //! wakes it through the waker installed with [`set_task_waker`].
+//!
+//! [`Task::after`] is a timer on the UI thread, with no thread of its own
+//! (D0027). It is due at a time on the UI thread's clock ([`now`]), and
+//! [`run_task_messages`] fires the timers that are due. The desktop wakes at
+//! [`next_timer`]; a test moves a [`TestClock`](crate::TestClock) instead.
+//!
+//! [`now`]: crate::now
 
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::reactive;
 use crate::view::Callback;
@@ -148,6 +155,8 @@ struct Entry {
   shared: Arc<Shared>,
   on_progress: Option<Callback<Progress>>,
   on_end: Box<dyn Fn(Outcome)>,
+  /// For a timer: when it is due on the UI thread's clock.
+  due: Option<Instant>,
 }
 
 thread_local! {
@@ -164,11 +173,16 @@ impl Task {
   /// Asks the task to stop. Its work sees this through
   /// [`TaskContext::is_cancelled`].
   pub fn cancel(self) {
-    TASKS.with_borrow(|t| {
-      if let Some(e) = t.get(&self.0) {
+    let timer = TASKS.with_borrow(|t| {
+      t.get(&self.0).is_some_and(|e| {
         e.shared.cancelled.store(true, Ordering::Relaxed);
-      }
+        e.due.is_some()
+      })
     });
+    // A cancelled timer ends at the next run of messages.
+    if timer {
+      wake();
+    }
   }
 
   /// True until the task's end has been given to its callback.
@@ -178,19 +192,29 @@ impl Task {
 
   /// Calls `then` on the UI thread once `delay` has passed, unless the
   /// returned task is cancelled first.
+  ///
+  /// The time is on the UI thread's clock ([`now`](crate::now)), and the
+  /// callback comes from [`run_task_messages`] once it is due.
   pub fn after(
     delay: Duration,
     then: Callback<()>,
   ) -> Task {
-    spawn_task(
-      move |cx| cx.sleep(delay).then_some(()),
-      None,
-      Callback::new(move |end| {
-        if end == TaskEnd::Done(()) {
+    let id = NEXT.get();
+    NEXT.set(id + 1);
+    let entry = Entry {
+      shared: Arc::new(Shared::default()),
+      on_progress: None,
+      on_end: Box::new(move |outcome: Outcome| {
+        if matches!(outcome, Ok(Some(_))) {
           then.call(());
         }
       }),
-    )
+      due: Some(crate::clock::now() + delay),
+    };
+    TASKS.with_borrow_mut(|t| t.insert(id, entry));
+    // The new timer is shown as running.
+    reactive::notify_change();
+    Task(id)
   }
 }
 
@@ -220,6 +244,7 @@ pub fn spawn_task<T: Send + 'static>(
       };
       on_end.call(end);
     }),
+    due: None,
   };
   TASKS.with_borrow_mut(|t| t.insert(id, entry));
   let cx = TaskContext(shared);
@@ -258,8 +283,13 @@ fn panic_message(panic: &(dyn Any + Send)) -> String {
 /// messages there were. The desktop crate calls it when a task wakes it;
 /// tests without a desktop call it themselves.
 pub fn run_task_messages() -> usize {
-  let ids: Vec<u64> = TASKS.with_borrow(|t| t.keys().copied().collect());
-  let mut count = 0;
+  let mut count = run_timers_due(crate::clock::now());
+  let ids: Vec<u64> = TASKS.with_borrow(|t| {
+    t.iter()
+      .filter(|(_, e)| e.due.is_none())
+      .map(|(id, _)| *id)
+      .collect()
+  });
   for id in ids {
     let Some((shared, on_progress)) = TASKS.with_borrow(|t| {
       t.get(&id)
@@ -286,9 +316,74 @@ pub fn run_task_messages() -> usize {
   count
 }
 
-/// How many tasks have not ended yet.
+/// How many tasks have not ended yet, timers included.
 pub fn tasks_running() -> usize {
   TASKS.with_borrow(BTreeMap::len)
+}
+
+/// How many timers from [`Task::after`] are waiting.
+pub fn timers_waiting() -> usize {
+  TASKS.with_borrow(|t| t.values().filter(|e| e.due.is_some()).count())
+}
+
+/// When the next timer is due, on the UI thread's clock. A cancelled timer
+/// is due at once, so it ends.
+pub fn next_timer() -> Option<Instant> {
+  let now = crate::clock::now();
+  TASKS.with_borrow(|t| {
+    t.values()
+      .filter_map(|e| {
+        let due = e.due?;
+        Some(if e.shared.cancelled.load(Ordering::Relaxed) {
+          now
+        } else {
+          due
+        })
+      })
+      .min()
+  })
+}
+
+/// When the first timer not cancelled that is due by `limit` is due.
+pub(crate) fn next_due_by(limit: Instant) -> Option<Instant> {
+  TASKS.with_borrow(|t| {
+    t.values()
+      .filter(|e| !e.shared.cancelled.load(Ordering::Relaxed))
+      .filter_map(|e| e.due)
+      .filter(|&due| due <= limit)
+      .min()
+  })
+}
+
+/// Fires the timers due by `now`, earliest first, and ends the cancelled
+/// ones. Returns how many ended.
+pub(crate) fn run_timers_due(now: Instant) -> usize {
+  let mut due: Vec<(Instant, u64)> = TASKS.with_borrow(|t| {
+    t.iter()
+      .filter_map(|(id, e)| {
+        let at = e.due?;
+        let cancelled = e.shared.cancelled.load(Ordering::Relaxed);
+        (cancelled || at <= now).then_some((at, *id))
+      })
+      .collect()
+  });
+  due.sort();
+  let mut count = 0;
+  for (_, id) in due {
+    // Removed first, so the callback sees the timer as ended.
+    let Some(entry) = TASKS.with_borrow_mut(|t| t.remove(&id)) else {
+      continue;
+    };
+    count += 1;
+    let fired = !entry.shared.cancelled.load(Ordering::Relaxed);
+    let outcome: Outcome = if fired {
+      Ok(Some(Box::new(()) as Box<dyn Any + Send>))
+    } else {
+      Ok(None)
+    };
+    (entry.on_end)(outcome);
+  }
+  count
 }
 
 #[cfg(test)]
@@ -390,5 +485,73 @@ mod tests {
     wait_for(kept);
     wait_for(dropped);
     assert_eq!(calls.get(), 1);
+  }
+
+  #[test]
+  fn a_test_clock_fires_timers_in_order_at_their_time() {
+    let clock = crate::TestClock::install();
+    let start = crate::now();
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let timer = |ms: u64, name: &'static str| {
+      let s = Rc::clone(&seen);
+      Task::after(
+        Duration::from_millis(ms),
+        Callback::new(move |()| {
+          s.borrow_mut().push((name, crate::now() - start));
+        }),
+      )
+    };
+    timer(300, "late");
+    let first = timer(100, "early");
+    let cancelled = timer(200, "cancelled");
+    cancelled.cancel();
+    assert_eq!(
+      next_timer(),
+      Some(start),
+      "the cancelled timer ends at once"
+    );
+    // Nothing fires while the clock stands still, however long it takes.
+    std::thread::sleep(Duration::from_millis(20));
+    run_task_messages();
+    assert!(seen.borrow().is_empty());
+    assert!(!cancelled.is_running());
+    assert_eq!(next_timer(), Some(start + Duration::from_millis(100)));
+
+    assert_eq!(clock.advance(Duration::from_millis(250)), 1);
+    assert!(!first.is_running());
+    assert_eq!(clock.advance(Duration::from_millis(250)), 1);
+    assert_eq!(
+      *seen.borrow(),
+      [
+        ("early", Duration::from_millis(100)),
+        ("late", Duration::from_millis(300)),
+      ]
+    );
+    assert_eq!(crate::now() - start, Duration::from_millis(500));
+    assert_eq!(next_timer(), None);
+    crate::set_clock(None);
+  }
+
+  #[test]
+  fn a_timer_that_sets_another_fires_both_in_one_advance() {
+    let clock = crate::TestClock::install();
+    let count = Rc::new(std::cell::Cell::new(0));
+    fn again(count: Rc<std::cell::Cell<u32>>) {
+      let c = Rc::clone(&count);
+      Task::after(
+        Duration::from_millis(40),
+        Callback::new(move |()| {
+          c.set(c.get() + 1);
+          if c.get() < 5 {
+            again(Rc::clone(&c));
+          }
+        }),
+      );
+    }
+    again(Rc::clone(&count));
+    // Five frames 40 ms apart, as an animation sets its next frame.
+    assert_eq!(clock.advance(Duration::from_secs(1)), 5);
+    assert_eq!(count.get(), 5);
+    crate::set_clock(None);
   }
 }

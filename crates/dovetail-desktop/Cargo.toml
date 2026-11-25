@@ -14,6 +14,7 @@ accesskit_winit.workspace = true
 dovetail-core.workspace = true
 dovetail-layout.workspace = true
 dovetail-render.workspace = true
+dovetail-session.workspace = true
 dovetail-text.workspace = true
 winit.workspace = true
 

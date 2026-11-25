@@ -1,6 +1,6 @@
 //! M05 "Done when" items 1 and 4: a new project builds with no changes, in
-//! debug and release. It compiles a whole project, including wgpu, so it is
-//! ignored by default:
+//! debug and release. M20 "Done when" item 6: its test passes. It compiles
+//! a whole project, including wgpu, so it is ignored by default:
 //! `cargo test -p dovetail-cli --test new_project -- --ignored`.
 //!
 //! The project's target folder is shared between runs, in this workspace's
@@ -64,6 +64,23 @@ fn a_new_project_builds_in_debug_and_release_with_no_changes() {
       program.display()
     );
   }
+
+  // The project's own test passes (M20).
+  let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+  let tested = Command::new(cargo)
+    .current_dir(&project)
+    .arg("test")
+    .env("CARGO_TARGET_DIR", shared_target())
+    .output()
+    .expect("run cargo test");
+  let out = String::from_utf8_lossy(&tested.stdout);
+  assert!(
+    tested.status.success() && out.contains("test result: ok. 1 passed"),
+    "the new project's test:
+{out}
+{}",
+    String::from_utf8_lossy(&tested.stderr)
+  );
 
   let again = dovetail(&parent, &["new", "sample-app"]);
   assert!(!again.status.success());

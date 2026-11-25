@@ -40,10 +40,14 @@ Keep the status the same in the overview, the plan, the report and the matrix.
 
 ## Other tests and tools
 
+How to write tests for controls and applications, headless, with pictures or with real windows, is in [testing](docs/architecture/testing.md).
+
 Some tests are left out of `cargo test --workspace`, because they need a GPU, change something on your machine, or need files that are not committed.
 
 - **Examples' self-tests:** `cargo run -p example-<name> -- --self-test` drives the example's window by itself and exits with a failure code if a check fails. Run them all after a change to windows, layout or painting.
 - **GPU tests** are `#[ignore]`d: `cargo test -p dovetail-render --all-features -- --ignored`. The sharpness test also needs the system fonts.
+- **Real-window tests** open windows and drive them through the window itself: `cargo test -p dovetail-testing --features windows --test windows -- --ignored`. They take focus while they run. Add a word after `--ignored` to run only the tests whose names hold it.
+- **Picture tests** compare painted elements with the PNGs in `tests/pictures/`, and need a GPU: `cargo test -p dovetail-testing --features pictures -- --ignored`. When one fails, the picture painted now and a picture of the difference are in `target/dovetail-pictures/`. After a change on purpose, run them with `DOVETAIL_UPDATE_PICTURES=1` to save the new pictures, and look at each one before committing it.
 - **A picture of the painter's output:** `cargo run -p dovetail-render --example snapshot -- out.png 2`.
 - **The clipboard test** is `#[ignore]`d because it changes the real clipboard: `cargo test -p dovetail-desktop -- --ignored clipboard`.
 - **Accessibility checks on Windows**, through UI Automation, are in `tools/access-check/`.

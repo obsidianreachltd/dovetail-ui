@@ -94,6 +94,8 @@ jobs:
           # signal 11 when tests made their own devices at the same time (B0007).
           if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; ONE="--test-threads=1"; else RUN=""; ONE=""; fi
           $RUN cargo test -p dovetail-render --all-features -- --ignored $ONE
+          # Pictures compared with saved ones (M20).
+          $RUN cargo test -p dovetail-testing --features pictures -- --ignored $ONE
       # If they still fail on Linux, run each GPU test binary again under gdb,
       # to show which test crashed and where (B0007).
       - name: Backtrace of a GPU test crash (Linux)
@@ -108,20 +110,15 @@ jobs:
             xvfb-run -a gdb -batch -ex run -ex 'thread apply all bt 30' --args "$bin" --ignored
             echo "::endgroup::"
           done
-      # M20 prototype (D0026): real windows driven from `cargo test`, on the
-      # main thread, with the event loop pumped one step at a time. It runs
-      # twice: as it is, then bringing each new window to the front. One
-      # macOS run failed for a reason not yet known, so both are kept to see
-      # which fails if it happens again. It does not block, and goes when
-      # M20's own window tests replace it.
-      - name: Window tests from cargo test (M20 prototype)
-        continue-on-error: true
-        timeout-minutes: 8
+      # Tests with real windows, run from `cargo test` on the main thread
+      # with the event loop pumped a step at a time (M20, D0026). They
+      # replace the prototype's run.
+      - name: Window tests (M20)
+        timeout-minutes: 5
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
-          $RUN cargo test -p prototype-window-tests --test pumped -- --ignored || echo "::warning::the prototype failed as it is"
-          PROTOTYPE_FRONT=1 $RUN cargo test -p prototype-window-tests --test pumped -- --ignored
+          $RUN cargo test -p dovetail-testing --features windows --test windows -- --ignored
       - name: Window self-test (M01)
         timeout-minutes: 3
         shell: bash
