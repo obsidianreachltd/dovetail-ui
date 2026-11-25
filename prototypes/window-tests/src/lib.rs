@@ -37,6 +37,14 @@ pub struct Seen {
   pub scale: f64,
   /// The window has been closed.
   pub closed: bool,
+  /// `RedrawRequested` events received.
+  pub redraws: u32,
+  /// Frames asked for that were skipped, as when the surface had no image.
+  pub skipped: u32,
+  /// `Occluded` events: hidden (true) or shown (false), the last one.
+  pub occluded: Option<bool>,
+  /// The last `Focused` event.
+  pub focused: Option<bool>,
 }
 
 enum Command {
@@ -64,6 +72,8 @@ struct Handler {
   opened: Vec<WindowId>,
   errors: Vec<String>,
   ready: bool,
+  /// Bring each new window to the front and give it focus.
+  front: bool,
 }
 
 fn physical(size: winit::dpi::PhysicalSize<u32>) -> PhysicalSize {
@@ -146,6 +156,9 @@ impl Handler {
         ..Seen::default()
       },
     );
+    if self.front {
+      window.focus_window();
+    }
     window.request_redraw();
     self
       .windows
@@ -182,14 +195,30 @@ impl ApplicationHandler for Handler {
     };
     match event {
       WindowEvent::RedrawRequested => {
-        match win.surface.draw_clear(gpu, win.colour) {
-          FrameOutcome::Presented => {
-            if let Some(seen) = self.seen.get_mut(&id) {
-              seen.frames += 1;
-            }
-          },
-          FrameOutcome::Retry => win.window.request_redraw(),
-          FrameOutcome::Skipped | FrameOutcome::DeviceLost => {},
+        let outcome = win.surface.draw_clear(gpu, win.colour);
+        if let Some(seen) = self.seen.get_mut(&id) {
+          seen.redraws += 1;
+          match outcome {
+            FrameOutcome::Presented => seen.frames += 1,
+            FrameOutcome::Skipped => seen.skipped += 1,
+            FrameOutcome::Retry | FrameOutcome::DeviceLost => {},
+          }
+        }
+        if outcome == FrameOutcome::Retry {
+          win.window.request_redraw();
+        }
+      },
+      WindowEvent::Occluded(hidden) => {
+        if let Some(seen) = self.seen.get_mut(&id) {
+          seen.occluded = Some(hidden);
+        }
+        if !hidden {
+          win.window.request_redraw();
+        }
+      },
+      WindowEvent::Focused(focused) => {
+        if let Some(seen) = self.seen.get_mut(&id) {
+          seen.focused = Some(focused);
         }
       },
       WindowEvent::Resized(size) => {
@@ -238,6 +267,7 @@ impl Driver {
       opened: Vec::new(),
       errors: Vec::new(),
       ready: false,
+      front: std::env::var_os("PROTOTYPE_FRONT").is_some(),
     };
     Ok(Self { event_loop, handler })
   }
@@ -346,6 +376,45 @@ impl Driver {
   /// Windows still open.
   pub fn open_windows(&self) -> usize {
     self.handler.windows.len()
+  }
+
+  /// Whether new windows are brought to the front (`PROTOTYPE_FRONT`).
+  pub fn brings_to_front(&self) -> bool {
+    self.handler.front
+  }
+
+  /// One line for each open window: what it has received, for a failure
+  /// message.
+  pub fn describe(&self) -> Vec<String> {
+    self
+      .handler
+      .windows
+      .iter()
+      .map(|(id, win)| {
+        let s = self.seen(*id);
+        format!(
+          "{:?}: {} redraws, {} frames, {} skipped, occluded {:?},            focused {:?}, visible {:?}, {}x{} px",
+          win.window.title(),
+          s.redraws,
+          s.frames,
+          s.skipped,
+          s.occluded,
+          s.focused,
+          win.window.is_visible(),
+          s.size.width,
+          s.size.height
+        )
+      })
+      .collect()
+  }
+
+  /// Closes every open window, so the next test starts with none.
+  pub fn close_all(&mut self) -> Result<(), String> {
+    let ids: Vec<WindowId> = self.handler.windows.keys().copied().collect();
+    for id in ids {
+      self.close(id)?;
+    }
+    Ok(())
   }
 }
 

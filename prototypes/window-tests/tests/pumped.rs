@@ -32,6 +32,10 @@ fn main() -> ExitCode {
   }
   let main_thread = std::thread::current().name() == Some("main");
   println!("main thread: {main_thread}");
+  println!(
+    "new windows brought to the front (PROTOTYPE_FRONT): {}",
+    std::env::var_os("PROTOTYPE_FRONT").is_some()
+  );
 
   let start = Instant::now();
   let mut driver = match Driver::new() {
@@ -50,29 +54,37 @@ fn main() -> ExitCode {
     ("a_second_event_loop_is_refused", second_loop),
   ];
   println!("running {} tests", tests.len());
+  let total = tests.len();
   let mut failed = 0;
   for (name, test) in tests {
     let begun = Instant::now();
     let outcome = catch_unwind(AssertUnwindSafe(|| test(&mut driver)))
       .unwrap_or_else(|_| Err("panicked".to_owned()));
     let took = begun.elapsed();
+    // A test that passes must close its windows.
+    let outcome = outcome.and_then(|note| match driver.open_windows() {
+      0 => Ok(note),
+      n => Err(format!("left {n} windows open")),
+    });
     match outcome {
       Ok(note) => println!("test {name} ... ok ({took:.0?}) {note}"),
       Err(e) => {
         failed += 1;
         println!("test {name} ... FAILED ({took:.0?}): {e}");
+        for line in driver.describe() {
+          println!("  {line}");
+        }
       },
     }
-    // Every test leaves no windows behind for the next.
-    if driver.open_windows() != 0 {
-      failed += 1;
-      println!("  {name} left {} windows open", driver.open_windows());
+    // The next test starts with no windows, whatever this one did.
+    if let Err(e) = driver.close_all() {
+      println!("  could not close the windows {name} left: {e}");
     }
   }
   println!(
     "\ntest result: {}. {} passed; {failed} failed; finished in {:.2?}",
     if failed == 0 { "ok" } else { "FAILED" },
-    6 - failed,
+    total - failed,
     start.elapsed()
   );
   if failed == 0 {

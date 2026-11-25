@@ -35,7 +35,18 @@ Six tests ran in one process, on one event loop:
 |---|---|---|
 | Windows 11, NVIDIA TITAN RTX, Vulkan | All 6 pass, 2026-11-25 | Runs on the main thread |
 | Linux, CI (Xvfb, lavapipe) | Waiting for CI | |
-| macOS, CI | Waiting for CI | The main-thread question |
+| macOS, CI (Apple Paravirtual device, Metal), first run | 3 of 6 pass, 2026-11-25 | Runs on the main thread, and the first window draws in 785 ms. Every window opened after the last one closed never drew. |
+| macOS, CI, bringing windows to the front | Waiting for CI | See below |
+
+### Windows that never drew on macOS
+
+On the first macOS run, the first test passed. Every test after it that opened a window timed out waiting for its first frame, and the tests that opened no window passed.
+
+- **The difference is the last window closing.** Each test closes its windows before the next one starts. M01's window self-test, which passed on macOS, opens its second window while the first is still open.
+- **The suspected cause:** when its last window closes, the program stops being the active one on macOS, and a window it opens later is not drawn. Not proven yet.
+- **A bug in the prototype made the output worse.** A failed test left its windows open. The next test then counted them as its own, and the summary said "-2 passed". This is fixed: a test that leaves windows open fails, and the runner closes them before the next test.
+- **What the second run records**, for each window still open when a test fails: the `RedrawRequested` events it got, frames shown and skipped, the last `Occluded` and `Focused` events, and whether it is visible.
+- **The second run tries a fix:** with `PROTOTYPE_FRONT=1`, each new window is brought to the front and given focus (`focus_window`). CI runs the prototype both without and with it.
 
 ## Measurements
 
@@ -57,4 +68,4 @@ On Windows, in a debug build:
 
 ## Recommendation
 
-Waiting for the CI results on Linux and macOS. If both pass, M20's real-window tests use a `harness = false` target and a driver that pumps the event loop, and D0026 records this.
+Waiting for the second CI run on Linux and macOS. If both pass, M20's real-window tests use a `harness = false` target and a driver that pumps the event loop, and D0026 records this.
