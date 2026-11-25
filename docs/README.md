@@ -12,6 +12,7 @@ This folder holds all project documents. Start with [goals](vision/goals.md), th
 | [architecture/crates.md](architecture/crates.md) | The packages and how they depend on each other |
 | [architecture/syntax.md](architecture/syntax.md) | The declarative `ui!` syntax and its open questions |
 | [architecture/reactive-handles-prototype.md](architecture/reactive-handles-prototype.md) | M02 prototype report comparing two designs for reactive state handles |
+| [architecture/window-tests-prototype.md](architecture/window-tests-prototype.md) | M20 prototype report: real-window tests run from `cargo test` |
 | [decisions/](decisions/README.md) | Records of important decisions |
 | [milestones/](milestones/README.md) | Milestone overviews, plans and completion reports, with the completion matrix |
 | [bugs/](bugs/README.md) | Bug records |

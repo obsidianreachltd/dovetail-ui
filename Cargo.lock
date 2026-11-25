@@ -2006,6 +2006,14 @@ name = "prototype-reactive-handles"
 version = "0.1.0"
 
 [[package]]
+name = "prototype-window-tests"
+version = "0.1.0"
+dependencies = [
+ "dovetail-render",
+ "winit",
+]
+
+[[package]]
 name = "quick-xml"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
