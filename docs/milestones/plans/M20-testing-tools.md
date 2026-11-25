@@ -55,14 +55,12 @@ Give application developers a supported way to test their user interface: find e
 
 ## Steps
 
-1. [ ] **Decide the shape** in a decision record (D0026), after the prototype in step 2:
-   - where the window-free input logic goes (step 3);
-   - how real-window tests run (step 8);
-   - how the clock works (step 5);
-   - the package and how applications add it.
-2. [ ] **Prototype a real-window test.** winit allows one event loop for each process. On macOS it must run on the main thread, but `cargo test` runs tests on other threads. Try a test target with `harness = false` that drives the event loop one step at a time with winit's `pump_app_events`, opening a window, clicking and checking. Run it in CI on all three systems before step 8 is committed.
-   - Built on 2026-11-25 in `prototypes/window-tests`, with results in the [prototype report](../../architecture/window-tests-prototype.md). All six of its tests pass on Windows. CI runs it on all three systems in the `window-self-test` job. Linux and macOS are waiting for that run.
-3. [ ] **Move the input logic out of the desktop.** Move the input state and methods of `UiWindow` into a type that needs no window, so that headless tests and real windows run the same code.
+1. [x] **Decide the shape**, after the prototype in step 2:
+   - [x] how real-window tests run (step 8): decided in [D0026](../../decisions/D0026-real-window-tests.md) on 2026-11-25;
+   - [x] where the window-free input logic goes (step 3), how the clock works (step 5), and the package and how applications add it: decided in [D0027](../../decisions/D0027-testing-foundations.md) on 2026-11-25.
+2. [x] **Prototype a real-window test.** winit allows one event loop for each process. On macOS it must run on the main thread, but `cargo test` runs tests on other threads. Try a test target with `harness = false` that drives the event loop one step at a time with winit's `pump_app_events`, opening a window, clicking and checking. Run it in CI on all three systems before step 8 is committed.
+   - Built on 2026-11-25 in `prototypes/window-tests`, with results in the [prototype report](../../architecture/window-tests-prototype.md). All six of its tests pass on Windows, Linux and macOS. One macOS run failed: windows opened after the last one closed did not draw. The next run passed, with and without bringing windows to the front, so the cause is not known yet. The prototype opens, resizes and closes windows, but sends no input: clicking goes through the `Context` hooks in step 8, which the self-tests already use on all three systems.
+3. [ ] **Move the input logic out of the desktop.** Move the input state and methods of `UiWindow` into `Session`, in a new package, `dovetail-session` (D0027), so that headless tests and real windows run the same code.
    - What moves: press and release, click to focus, pointer capture, click counting, hover, focus-within, Tab and the context menu keys, the wheel, scroll bar dragging, settling focus, size and scroll reports, and drag and drop within one window.
    - What it is given instead of reading the platform: the measure, the caret blink time, and whether scroll bars overlay.
    - What stays in the desktop: winit, the AccessKit adapter, the canvas, IME areas, window titles, and drags between windows.
@@ -78,7 +76,7 @@ Give application developers a supported way to test their user interface: find e
    - **Finding:** by role, label, text and state, from the step 4 data:
      - `find` returns one element, `find_all` returns any number, and `within` searches inside an element;
      - when nothing or more than one matches, the message names the search and lists the elements that are there, with their roles and labels.
-   - **Input through the window** (the step 3 type), with no system key presses:
+   - **Input through the window** (through `Session`), with no system key presses:
      - click, double-click, right-click, hover, drag and scroll;
      - `type_text`, `key` and `shortcut` (with the command key for each system), and paste from the memory clipboard;
      - every action builds and lays out again before it returns.
@@ -111,20 +109,17 @@ Give application developers a supported way to test their user interface: find e
 
 ## Prototypes and open decisions
 
-- **Running real windows from tests** (step 2), with `harness = false` and `pump_app_events`. Works on Windows ([prototype report](../../architecture/window-tests-prototype.md)). If it does not work on macOS, real-window tests run as a program, as the self-tests do, and only headless tests run under `cargo test`. The prototype decides.
-- **Where the input logic goes** (D0026). There are two choices:
-  - in `dovetail-layout`, beside `focus_next` and `dispatch_key`;
-  - in a new package between `dovetail-layout` and `dovetail-desktop`.
-
-  Either way it must not depend on winit, wgpu or AccessKit.
-- **How applications add the package:** as a dev-dependency of its own, `dovetail-testing`, or re-exported by `dovetail-ui` behind a feature. A re-export would make `dovetail-ui` depend on `dovetail-testing`, so that package could not use `dovetail-ui` itself.
-- **What the clock covers:** only timers on the UI thread, or also `TaskContext::sleep` in background tasks. This plan starts with the UI thread only.
+- **Running real windows from tests** (step 2), with `harness = false` and `pump_app_events`. Decided: it works on all three systems ([prototype report](../../architecture/window-tests-prototype.md), [D0026](../../decisions/D0026-real-window-tests.md)).
+- **Where the input logic goes, the clock, and the package:** decided in [D0027](../../decisions/D0027-testing-foundations.md):
+  - a new package, `dovetail-session`, between `dovetail-layout` and `dovetail-desktop`, with no winit, wgpu or AccessKit;
+  - `dovetail_core::now()` and timers on the UI thread, with background tasks kept in real time;
+  - `dovetail-testing` as a dev-dependency of its own, not re-exported by `dovetail-ui`, with `pictures` and `windows` features.
 - **Picture tolerance:** the same GPU drivers can differ in a channel by one or two levels. Choose the default from runs on WARP, Metal, lavapipe and a real GPU.
 
 ## Risks
 
 - **Moving the input logic can break input.** It is a large move inside the busiest code. Move it in small steps, with every example's self-test and the `access.rs` tests run after each.
-- **Real-window tests may not fit `cargo test` on macOS.** The main-thread rule is the reason for the prototype. Headless tests do not depend on it.
+- **Real-window tests may not fit `cargo test` on macOS.** The prototype showed they do, but one macOS run failed for a reason not yet known. CI keeps running the prototype until M20's own window tests replace it. If the failure comes back and cannot be fixed, the fallback in D0026 is a program for each test.
 - **Pictures differ between systems.** The built-in font, a fixed scale and a tolerance should be enough. If they are not, pictures are saved for each system.
 - **Lavapipe crashes** ([B0007](../../bugs/B0007-gpu-tests-crash-on-linux-ci.md)). Picture tests on Linux CI may need to run one at a time, as the GPU tests do.
 - **A test clock can hide timing bugs** that only real time shows. The examples' self-tests keep real time, so both are tested.
