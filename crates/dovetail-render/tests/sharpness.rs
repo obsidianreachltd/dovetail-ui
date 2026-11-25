@@ -201,7 +201,10 @@ fn sharp(
       r.empty.0,
       r.ink
     );
-    assert!(r.full.0 > 20, "at {scale}: the text has solid pixels");
+    // Enough fully covered pixels for the check to mean something. How
+    // many there are depends on the system's fonts: Segoe UI on Windows
+    // gives 57 at 100%, and the CI runners for macOS and Linux gave 18.
+    assert!(r.full.0 >= 10, "at {scale}: the text has solid pixels");
     assert_eq!(r.full.1, r.full.0, "at {scale}: every full pixel is solid");
     assert_eq!(
       r.empty.1, r.empty.0,
