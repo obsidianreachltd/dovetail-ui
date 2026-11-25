@@ -12,11 +12,11 @@ Use the `_template.md` file in each folder for a new document.
 
 | ID | Milestone | Status | Depends on | Overview | Plan | Report | Criteria met |
 |---|---|---|---|---|---|---|---|
-| M00 | Workspace foundation | In progress | — | [Overview](overviews/M00-workspace-foundation.md) | [Plan](plans/M00-workspace-foundation.md) | — | 5/6 |
-| M01 | Window and GPU | In progress | M00 | [Overview](overviews/M01-window-and-gpu.md) | [Plan](plans/M01-window-and-gpu.md) | — | 0/6 |
+| M00 | Workspace foundation | Done | — | [Overview](overviews/M00-workspace-foundation.md) | [Plan](plans/M00-workspace-foundation.md) | [Report](reports/M00-workspace-foundation.md) | 6/6 |
+| M01 | Window and GPU | In progress | M00 | [Overview](overviews/M01-window-and-gpu.md) | [Plan](plans/M01-window-and-gpu.md) | — | 5/6 |
 | M02 | Component and state core | Done | M00 | [Overview](overviews/M02-component-and-state-core.md) | [Plan](plans/M02-component-and-state-core.md) | [Report](reports/M02-component-and-state-core.md) | 6/6 |
 | M03 | Declarative macro | Done | M02 | [Overview](overviews/M03-declarative-macro.md) | [Plan](plans/M03-declarative-macro.md) | [Report](reports/M03-declarative-macro.md) | 5/5 |
-| M04 | Layout and painting | In progress | M01, M03 | [Overview](overviews/M04-layout-and-painting.md) | [Plan](plans/M04-layout-and-painting.md) | — | 5/6 |
+| M04 | Layout and painting | Done | M01, M03 | [Overview](overviews/M04-layout-and-painting.md) | [Plan](plans/M04-layout-and-painting.md) | [Report](reports/M04-layout-and-painting.md) | 6/6 |
 | M05 | CLI and rebuild loop | Done | M04 | [Overview](overviews/M05-cli-and-rebuild-loop.md) | [Plan](plans/M05-cli-and-rebuild-loop.md) | [Report](reports/M05-cli-and-rebuild-loop.md) | 5/5 |
 | M06 | Text and input | In progress | M04 | [Overview](overviews/M06-text-and-input.md) | [Plan](plans/M06-text-and-input.md) | [Report](reports/M06-text-and-input.md) | 6/7 |
 | M07 | Accessibility | In progress | M06 | [Overview](overviews/M07-accessibility.md) | [Plan](plans/M07-accessibility.md) | — | 4/5 |
@@ -43,7 +43,7 @@ There are two kinds of milestone:
 - **Mnn** milestones build part of the framework.
 - **Rnn** milestones are releases. They gather finished milestones, package them and publish them. R01, the first release, was called M12 until 2026-11-23. It comes after more feature milestones than it did then, so new Mnn milestones may be added before it.
 
-IDs are not the order of work: "Depends on" is. M13 was split from M06 on 2026-11-20 and comes after it, before the first release. M18 to M24 were added on 2026-11-25: M18 to M22 come before the first release, and M23 and M24 after it.
+IDs are not the order of work: "Depends on" is. M13 was split from M06 on 2026-11-20 and comes after it, before the first release. M18 to M24 were added on 2026-11-25: M18 to M22 come before the first release, and M23 and M24 after it. On the same day CI first passed on all three systems, which finished M00 and M04 and met five of M01's six criteria. M01's last one, moving between displays with different scales, needs a person.
 
 ## Status words
 

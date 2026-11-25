@@ -1,0 +1,12 @@
+# The Rust version used to build, lint and test Dovetail, locally and in CI.
+# New Rust versions bring new clippy lints and new compiler messages, so
+# upgrade this on purpose: change the version here and in
+# .github/workflows/ci.yml, fix the new lints, and regenerate the macro
+# error snapshots (see CONTRIBUTING.md).
+#
+# This is not the oldest version Dovetail supports. That is `rust-version`
+# in Cargo.toml.
+[toolchain]
+channel = "1.100.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

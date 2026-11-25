@@ -476,7 +476,7 @@ fn broken_and_cut_short_pngs_are_errors() {
     bad[at] ^= 0x55;
     assert!(decode_rgba(&bad).is_err(), "changed at {at}");
   }
-  assert_eq!(decode_rgba(b"BM    "), Err(Error::NotAnImage));
+  assert_eq!(decode_rgba(b"BM\0\0\0\0"), Err(Error::NotAnImage));
   assert_eq!(decode_rgba(b"GIF89a"), Err(Error::Truncated));
   assert!(Bitmap::decode(&[]).is_err());
 }

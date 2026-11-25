@@ -4,7 +4,9 @@ Thank you for helping. This guide explains how to set up, how work is organised,
 
 ## Setup
 
-1. Install Rust with [rustup](https://rustup.rs). You need Rust 1.89 or later.
+1. Install Rust with [rustup](https://rustup.rs). The repository's `rust-toolchain.toml` pins the version used for building, linting and testing, and rustup installs it the first time you run `cargo` here. The oldest version Dovetail supports is Rust 1.89 (`rust-version` in `Cargo.toml`).
+   - On Windows, rustup installs the pinned version for its default host. Make sure that is MSVC, because the GNU build cannot build wgpu: `rustup set default-host x86_64-pc-windows-msvc`.
+   - To upgrade the pinned version, change it in `rust-toolchain.toml` and `.github/workflows/ci.yml`, fix any new clippy lints, and regenerate the macro error snapshots.
 2. Add the tools: `rustup component add rustfmt clippy`.
 3. Clone the repository and run `cargo build`.
 

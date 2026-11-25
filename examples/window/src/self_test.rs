@@ -18,6 +18,9 @@ pub static FAILED: AtomicBool = AtomicBool::new(false);
 const STEP_TIMEOUT: Duration = Duration::from_secs(10);
 /// How long the window stays minimised.
 const MINIMISED_FOR: Duration = Duration::from_secs(1);
+/// How often to ask a restored window for a frame. Straight after
+/// restoring, macOS may still count it as hidden and skip the frame.
+const RESTORE_RETRY: Duration = Duration::from_millis(500);
 
 const RESIZED_TO: LogicalSize = LogicalSize::new(640.0, 480.0);
 
@@ -38,6 +41,8 @@ pub struct SelfTest {
   second: Option<WindowId>,
   new_size_seen: bool,
   zero_size_seen: bool,
+  /// Frames asked for since restoring.
+  restore_asks: u32,
   passed: usize,
 }
 
@@ -49,6 +54,7 @@ impl SelfTest {
       second: None,
       new_size_seen: false,
       zero_size_seen: false,
+      restore_asks: 0,
       passed: 0,
     }
   }
@@ -243,7 +249,14 @@ impl Application for SelfTest {
         cx.set_minimized(first, false);
         // Wayland ignores minimising, so no resize may follow. Ask anyway.
         cx.request_redraw(first);
-        self.go(cx, Step::Restore, STEP_TIMEOUT);
+        self.restore_asks = 1;
+        self.go(cx, Step::Restore, RESTORE_RETRY);
+      },
+      Step::Restore if RESTORE_RETRY * self.restore_asks < STEP_TIMEOUT => {
+        let first = self.first.expect("first window");
+        cx.request_redraw(first);
+        self.restore_asks += 1;
+        self.go(cx, Step::Restore, RESTORE_RETRY);
       },
       Step::Finished => {},
       step => self.fail(cx, &format!("step {step:?} timed out")),

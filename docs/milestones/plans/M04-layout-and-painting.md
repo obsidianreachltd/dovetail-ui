@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | ID | M04 |
-| Status | In progress |
+| Status | Done |
 | Overview | [M04 overview](../overviews/M04-layout-and-painting.md) |
-| Last updated | 2026-11-20 |
+| Last updated | 2026-11-25 |
 
 ## Goal
 
@@ -51,7 +51,7 @@ Build our own layout engine and 2D painting, plus a first set of basic controls,
    - `Toggle`, with `on` and `on_change`;
    - the text control (see step 1);
    - `Column`, `Row` and `Stack`, built on elements.
-10. [x] **`examples/counter`:** the Counter from the syntax document in a window. Add `--self-test`, which presses the button by sending pointer events and checks the count, for CI on all three operating systems. Done. On Windows on 2026-11-20, three clicks showed counts 1, 2 and 3, and it exited with code 0, on Vulkan and on DX12. CI runs it in the GPU job. Linux and macOS have not run it yet.
+10. [x] **`examples/counter`:** the Counter from the syntax document in a window. Add `--self-test`, which presses the button by sending pointer events and checks the count, for CI on all three operating systems. Done. On Windows on 2026-11-20, three clicks showed counts 1, 2 and 3, and it exited with code 0, on Vulkan and on DX12. CI runs it in the `window-self-test` job, where it passed on Windows, Linux (X11 under Xvfb) and macOS on 2026-11-25.
 11. [x] **Tests.** The layout half is done: 13 tests in `crates/dovetail-layout/tests/layout.rs`. Changing one text in a list of 100 items lays out 3 of 201 boxes and reuses 198, and incremental layout equals a full layout.
     - layout tests with no GPU (done);
     - image tests that paint into a texture, read it back, and check chosen pixels (inside, border, corner, clipped area). Done: 5 tests in `crates/dovetail-render/tests/paint.rs`, which also cover text, a colour change repainting only its box, and a moved box leaving nothing behind. CI runs them in the GPU job.
@@ -66,7 +66,7 @@ Build our own layout engine and 2D painting, plus a first set of basic controls,
 
 - **Text (D0012):** how labels are drawn without a font library (see D0012).
 - **Text control name:** decided, `Text`. The overview's criterion 4 was changed from `Label` to `Text`.
-- **Repaint into a texture that persists:** swapchain images do not keep their contents between frames, so partial repainting needs its own texture. That costs one copy each frame and memory the size of the window. The alternative is to repaint the whole window, which needs no extra texture but breaks criterion 3. This choice is recorded as a decision with the measurements.
+- **Repaint into a texture that persists:** swapchain images do not keep their contents between frames, so partial repainting needs its own texture. That costs one copy each frame and memory the size of the window. The alternative is to repaint the whole window, which needs no extra texture but breaks criterion 3. Recorded, with the measurements, in [D0025](../../decisions/D0025-repaint-into-a-kept-texture.md).
 - **Rounded clipping:** M04 clips to rectangles only. Rounded clipping, with a stencil or a mask, waits until a milestone needs it.
 
 ## Risks

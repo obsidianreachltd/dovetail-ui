@@ -248,14 +248,19 @@ fn colour(w: &Window) -> Option<[u8; 3]> {
   Some([p[0], p[1], p[2]])
 }
 
-/// The colours shown over `time`, each change once.
-fn watch(
+/// The colours shown, each change once, until `enough` of them have been
+/// seen or `time` has passed.
+///
+/// The tests wait for what they expect, not for a fixed time, because CI
+/// machines can be slow to decode and to wake for the next frame.
+fn watch_until(
   w: &mut Window,
+  enough: usize,
   time: Duration,
 ) -> Vec<[u8; 3]> {
   let start = Instant::now();
   let mut seen: Vec<[u8; 3]> = Vec::new();
-  while start.elapsed() < time {
+  while seen.len() < enough && start.elapsed() < time {
     std::thread::sleep(Duration::from_millis(3));
     run_task_messages();
     w.refresh();
@@ -268,6 +273,21 @@ fn watch(
   seen
 }
 
+/// The colours shown over `time`, each change once.
+fn watch(
+  w: &mut Window,
+  time: Duration,
+) -> Vec<[u8; 3]> {
+  watch_until(w, usize::MAX, time)
+}
+
+/// Long enough for anything these tests wait for, on a slow machine.
+const PATIENCE: Duration = Duration::from_secs(10);
+
+/// Far longer than a frame (40 ms): if nothing changes in this time, the
+/// animation is still.
+const STILL: Duration = Duration::from_millis(300);
+
 const R: [u8; 3] = [255, 0, 0];
 const G: [u8; 3] = [0, 255, 0];
 const B: [u8; 3] = [0, 0, 255];
@@ -276,7 +296,7 @@ const B: [u8; 3] = [0, 0, 255];
 fn images_of_the_same_bytes_share_one_decoding() {
   let before = image_decodes();
   let mut w = open_shared(three_colours(Some(1)));
-  watch(&mut w, Duration::from_millis(100));
+  watch_until(&mut w, 1, PATIENCE);
   assert_eq!(
     w.pictures()
       .iter()
@@ -290,26 +310,25 @@ fn images_of_the_same_bytes_share_one_decoding() {
 #[test]
 fn an_animation_plays_as_many_times_as_it_says_then_stops() {
   let mut w = open_shared(three_colours(Some(2)));
-  let seen = watch(&mut w, Duration::from_millis(600));
-  assert_eq!(
-    seen,
-    [R, G, B, R, G, B],
-    "twice through, ending on the last frame"
-  );
+  let seen = watch_until(&mut w, 6, PATIENCE);
+  assert_eq!(seen, [R, G, B, R, G, B], "twice through");
+  let after = watch(&mut w, STILL);
+  assert_eq!(after, [B], "stopped on the last frame");
 }
 
 #[test]
 fn an_animation_stops_when_paused_and_plays_on() {
   let mut w = open_shared(three_colours(None));
-  let seen = watch(&mut w, Duration::from_millis(300));
-  assert!(seen.len() >= 5, "plays for ever: {seen:?}");
+  // Past the end of the first play: it goes on.
+  let seen = watch_until(&mut w, 5, PATIENCE);
+  assert_eq!(seen, [R, G, B, R, G], "plays for ever");
   PLAYING.get().expect("state").set(false);
   w.refresh();
   let paused = colour(&w);
-  let still = watch(&mut w, Duration::from_millis(200));
+  let still = watch(&mut w, STILL);
   assert_eq!(still.len(), 1, "one frame while paused: {still:?}");
   assert_eq!(still.first().copied(), paused);
   PLAYING.get().expect("state").set(true);
-  let again = watch(&mut w, Duration::from_millis(200));
-  assert!(again.len() >= 3, "plays on: {again:?}");
+  let again = watch_until(&mut w, 3, PATIENCE);
+  assert_eq!(again.len(), 3, "plays on: {again:?}");
 }

@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+# The Rust version is pinned in rust-toolchain.toml. Keep the versions below
+# the same as it, so new lints and compiler messages arrive only when it is
+# upgraded on purpose.
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
@@ -19,7 +22,7 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
@@ -35,55 +38,79 @@ jobs:
         run: cargo test -p dovetail-cli --test new_project -- --ignored
 
   # The compile-fail tests lock rustc's error messages, which change between
-  # Rust versions, so they run on one pinned version and one system.
-  # Upgrade the version on purpose and regenerate the .stderr files
+  # Rust versions, so they run on one system, with the pinned version.
+  # When the version is upgraded, regenerate the .stderr files
   # (crates/dovetail-macros/tests/compile_fail.rs).
   macro-errors:
-    name: macro error messages (Rust 1.94.0)
+    name: macro error messages (Rust 1.100.0)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.94.0
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
       - name: Test dovetail-macros
         run: cargo test -p dovetail-macros
 
   window-self-test:
     # Opens real windows and draws with the GPU (M01), and runs the GPU
-    # painting tests (M04). It blocks on Windows,
-    # where it has passed. On Linux and macOS it reports but does not block
-    # until it has passed there once.
+    # painting tests (M04). It blocks on all three systems: it first passed
+    # on Linux and macOS on 2026-11-25.
     name: window self-test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.os != 'windows-latest' }}
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
-      - name: Install a display server and software Vulkan (Linux)
+      # winit loads the X11 and keyboard libraries when it starts, so they
+      # must be installed even though nothing links against them.
+      - name: Install a display server, X11 libraries and software Vulkan (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y xvfb mesa-vulkan-drivers libvulkan1
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          xvfb mesa-vulkan-drivers libvulkan1
+          libxkbcommon-x11-0 libx11-xcb1 libxcursor1 libxi6 libxrandr2
       - name: Build
         run: cargo build -p example-window -p example-counter
+      # A self-test that hangs is stopped by the step's time limit. The
+      # `timeout` command is not on macOS runners.
       - name: Counter self-test (M04)
+        timeout-minutes: 3
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
-          timeout 120 $RUN cargo run -p example-counter -- --self-test
+          $RUN cargo run -p example-counter -- --self-test
+      # Includes building the tests, and the sharpness test, which takes
+      # about two minutes in a debug build.
       - name: GPU tests (painting and device loss)
+        timeout-minutes: 12
+        shell: bash
+        run: |
+          # On Linux the tests run one at a time: lavapipe has crashed with
+          # signal 11 when tests made their own devices at the same time (B0007).
+          if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; ONE="--test-threads=1"; else RUN=""; ONE=""; fi
+          $RUN cargo test -p dovetail-render --all-features -- --ignored $ONE
+      # If they still fail on Linux, run each GPU test binary again under gdb,
+      # to show which test crashed and where (B0007).
+      - name: Backtrace of a GPU test crash (Linux)
+        if: failure() && runner.os == 'Linux'
+        timeout-minutes: 10
+        run: |
+          sudo apt-get install -y gdb
+          lscpu | grep -E 'Model name|Flags' | cut -c1-300
+          dpkg -l mesa-vulkan-drivers | tail -1
+          for bin in $(cargo test -p dovetail-render --all-features --tests --no-run --message-format=json | jq -r 'select(.executable != null) | .executable'); do
+            echo "::group::$(basename "$bin")"
+            xvfb-run -a gdb -batch -ex run -ex 'thread apply all bt 30' --args "$bin" --ignored
+            echo "::endgroup::"
+          done
+      - name: Window self-test (M01)
+        timeout-minutes: 3
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
-          $RUN cargo test -p dovetail-render --all-features -- --ignored
-      - name: Self-test (Linux, X11 under Xvfb)
-        if: runner.os == 'Linux'
-        run: timeout 120 xvfb-run -a cargo run -p example-window -- --self-test
-      - name: Self-test (Windows and macOS)
-        if: runner.os != 'Linux'
-        shell: bash
-        run: timeout 120 cargo run -p example-window -- --self-test
+          $RUN cargo run -p example-window -- --self-test

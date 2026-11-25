@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | ID | M00 |
-| Status | In progress |
+| Status | Done |
 | Overview | [M00 overview](../overviews/M00-workspace-foundation.md) |
-| Last updated | 2026-11-20 |
+| Last updated | 2026-11-25 |
 
 ## Goal
 
@@ -25,7 +25,7 @@ Turn the repository into a Cargo workspace with the first crates, CI on all thre
 4. [x] Create `dovetail-cli` as a binary crate that installs a command called `dovetail`.
 5. [x] Set the dependencies between crates to match the [dependency graph](../../architecture/crates.md#dependency-graph).
 6. [x] Add `[workspace.lints]`, `rustfmt.toml`, and make sure `target/` is in `.gitignore`.
-7. [x] Add a CI workflow that runs `cargo fmt --check`, `cargo clippy` and `cargo test` on Windows, Linux and macOS. Written as `.github/workflows/ci.yml`, but not run yet because the repository has no remote.
+7. [x] Add a CI workflow that runs `cargo fmt --check`, `cargo clippy` and `cargo test` on Windows, Linux and macOS. Written as `.github/workflows/ci.yml`. It first ran when the repository went to GitHub, and passed on all three systems on 2026-11-25, after the fixes listed in the [report](../reports/M00-workspace-foundation.md).
 8. [x] Check and record the licences of winit, wgpu, AccessKit and their dependencies in [D0005](../../decisions/D0005-permissive-licence.md). Only the crates themselves are checked so far. Their dependencies are checked in M01.
 9. [x] Choose the licence, mark D0005 as Accepted, add the licence files, and add a `license` entry to every crate. Chosen: MIT OR Apache-2.0.
 10. [x] Check whether the `dovetail-*` names are free on crates.io and whether `dovetailui.dev` is free, and record the results. Checked on 2026-11-20:

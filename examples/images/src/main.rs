@@ -71,7 +71,12 @@ thread_local! {
 fn make_large() -> std::io::Result<PathBuf> {
   let n = LARGE as usize;
   let mut pixels = vec![0u8; n * n * 4];
-  for (i, p) in pixels.chunks_exact_mut(4).enumerate() {
+  for (i, p) in pixels
+    .as_chunks_mut::<4>()
+    .0
+    .iter_mut()
+    .enumerate()
+  {
     let (x, y) = (i % n, i / n);
     p.copy_from_slice(&[
       (x / 16) as u8,

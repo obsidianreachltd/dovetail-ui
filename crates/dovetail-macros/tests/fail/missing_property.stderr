@@ -7,12 +7,11 @@ error[E0277]: `Label` needs the property `text`
    |                           `text` is missing here
    |                           required by a bound introduced by this call
    |
-   = help: the trait `__LabelNeeds_text` is not implemented for `Unset`
+   = help: the trait `__LabelNeeds_text` is not implemented for `dovetail::__private::Unset`
    = note: give it inside the braces, for example `Label { text: ... }`
 note: required by a bound in `LabelProps::__build`
   --> tests/fail/missing_property.rs:7:4
    |
  6 | #[component]
-   | ------------ required by a bound in this associated function
  7 | fn Label(#[prop(into)] text: String, #[prop(default)] size: u32) -> View {
    |    ^^^^^ required by this bound in `LabelProps::__build`

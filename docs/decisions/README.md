@@ -30,6 +30,7 @@ A decision record explains one important choice: why it was made, and what it me
 | [D0022](D0022-data-views-foundations.md) | Data views: rows made from the scroll position, data from functions | Accepted | 2026-11-24 |
 | [D0023](D0023-images-and-icons.md) | Images and icons: our own decoders, SVG outlines, a texture for each image | Replaced by D0024 | 2026-11-24 |
 | [D0024](D0024-images-icons-and-animation.md) | Images, icons and animation: our own decoders, SVG outlines in their colours, a texture for each image | Accepted | 2026-11-24 |
+| [D0025](D0025-repaint-into-a-kept-texture.md) | Windows paint into a texture kept between frames | Accepted | 2026-11-25 |
 
 ## Status words
 

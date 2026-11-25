@@ -5,4 +5,4 @@ error[E0599]: no method named `colour` found for struct `__LabelPropsBuilder<__t
    | ------------ method `colour` not found for this struct
 ...
 11 | fn main() { let _ = ui! { Label { text: "a", colour: 1 } }; }
-   |                                              ^^^^^^ method not found in `__LabelPropsBuilder<Set>`
+   |                                              ^^^^^^ method not found in `__LabelPropsBuilder<dovetail::__private::Set>`

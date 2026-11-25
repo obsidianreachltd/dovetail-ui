@@ -3,10 +3,10 @@
 | Field | Value |
 |---|---|
 | ID | M04 |
-| Status | In progress |
+| Status | Done |
 | Depends on | M01, M03 |
 | Plan | [M04 plan](../plans/M04-layout-and-painting.md) |
-| Report | — |
+| Report | [M04 report](../reports/M04-layout-and-painting.md) |
 
 ## Summary
 

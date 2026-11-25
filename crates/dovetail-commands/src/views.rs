@@ -206,7 +206,9 @@ pub(crate) fn menu_icon(icon: &dovetail_image::Icon) -> dovetail::MenuIcon {
     icon
       .render_rgba(side, side, [0.0, 0.0, 0.0, 1.0])
       .pixels
-      .chunks_exact(4)
+      .as_chunks::<4>()
+      .0
+      .iter()
       .flat_map(|p| {
         let a = u16::from(p[3]);
         let pre = |c: u8| ((u16::from(c) * a + 127) / 255) as u8;

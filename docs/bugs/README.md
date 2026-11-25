@@ -12,6 +12,7 @@ Each bug has its own file, `B0001-short-name.md`, written from the [template](_t
 | [B0004](B0004-doubled-letter-when-typing.md) | A typed letter appeared twice once, and could not be repeated | Closed | Medium | M06 | Windows |
 | [B0005](B0005-second-window-loses-rebuilds.md) | A second UI window loses the other window's rebuilds | Fixed | High | M10 | All |
 | [B0006](B0006-text-field-right-walk-flaky.md) | The text field self-test's Right walk sometimes ends early | Open | Low | M13 | Windows |
+| [B0007](B0007-gpu-tests-crash-on-linux-ci.md) | GPU tests sometimes crash on the Linux CI runner | Open | Medium | M00 | Linux |
 
 ## Status words
 

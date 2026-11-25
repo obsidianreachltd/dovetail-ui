@@ -385,7 +385,7 @@ pub fn encode(
     // The palette, with 255 for transparent.
     let mut palette: Vec<[u8; 3]> = Vec::new();
     let mut indexes = Vec::with_capacity(w * h);
-    for p in f.image.pixels.chunks_exact(4) {
+    for p in f.image.pixels.as_chunks::<4>().0 {
       if p[3] < 128 {
         indexes.push(255u8);
         continue;

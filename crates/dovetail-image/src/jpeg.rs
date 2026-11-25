@@ -986,7 +986,7 @@ fn colours(
   // with no JFIF marker; otherwise YCbCr.
   let rgb = match adobe {
     Some(t) => t == 0,
-    None => !jfif && ids == [b'R', b'G', b'B'],
+    None => !jfif && ids == *b"RGB",
   };
   let ycck = adobe == Some(2);
   let mut pixels = vec![0u8; w * h * 4];

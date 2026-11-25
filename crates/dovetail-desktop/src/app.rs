@@ -2157,6 +2157,13 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
         self.save_placement(id);
         self.tell_place(id);
       },
+      // A frame asked for while the window was hidden or minimised is
+      // skipped, and nothing asks again. So draw once it can be seen.
+      WindowEvent::Occluded(false) => {
+        if let Some(entry) = self.shell.windows.get(&id) {
+          entry.window.request_redraw();
+        }
+      },
       WindowEvent::CloseRequested => {
         // A component that guards the window is asked first.
         if self.shell.ask_guard(id) {

@@ -3,10 +3,10 @@
 | Field | Value |
 |---|---|
 | ID | M00 |
-| Status | In progress |
+| Status | Done |
 | Depends on | — |
 | Plan | [M00 plan](../plans/M00-workspace-foundation.md) |
-| Report | — |
+| Report | [M00 report](../reports/M00-workspace-foundation.md) |
 
 ## Summary
 
