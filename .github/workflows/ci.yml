@@ -59,7 +59,7 @@ jobs:
     name: window self-test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.os != 'windows-latest' }}
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -68,25 +68,35 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.100.0
       - uses: Swatinem/rust-cache@v2
-      - name: Install a display server and software Vulkan (Linux)
+      # winit loads the X11 and keyboard libraries when it starts, so they
+      # must be installed even though nothing links against them.
+      - name: Install a display server, X11 libraries and software Vulkan (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y xvfb mesa-vulkan-drivers libvulkan1
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          xvfb mesa-vulkan-drivers libvulkan1
+          libxkbcommon-x11-0 libx11-xcb1 libxcursor1 libxi6 libxrandr2
       - name: Build
         run: cargo build -p example-window -p example-counter
+      # A self-test that hangs is stopped by the step's time limit. The
+      # `timeout` command is not on macOS runners.
       - name: Counter self-test (M04)
+        timeout-minutes: 3
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
-          timeout 120 $RUN cargo run -p example-counter -- --self-test
+          $RUN cargo run -p example-counter -- --self-test
+      # Includes building the tests, and the sharpness test, which takes
+      # about two minutes in a debug build.
       - name: GPU tests (painting and device loss)
+        timeout-minutes: 12
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
           $RUN cargo test -p dovetail-render --all-features -- --ignored
-      - name: Self-test (Linux, X11 under Xvfb)
-        if: runner.os == 'Linux'
-        run: timeout 120 xvfb-run -a cargo run -p example-window -- --self-test
-      - name: Self-test (Windows and macOS)
-        if: runner.os != 'Linux'
+      - name: Window self-test (M01)
+        timeout-minutes: 3
         shell: bash
-        run: timeout 120 cargo run -p example-window -- --self-test
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
+          $RUN cargo run -p example-window -- --self-test
