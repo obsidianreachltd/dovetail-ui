@@ -53,12 +53,10 @@ jobs:
 
   window-self-test:
     # Opens real windows and draws with the GPU (M01), and runs the GPU
-    # painting tests (M04). It blocks on Windows,
-    # where it has passed. On Linux and macOS it reports but does not block
-    # until it has passed there once.
+    # painting tests (M04). It blocks on all three systems: it first passed
+    # on Linux and macOS on 2026-11-25.
     name: window self-test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.os != 'windows-latest' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false

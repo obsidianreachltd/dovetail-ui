@@ -5,7 +5,7 @@
 | ID | M01 |
 | Status | In progress |
 | Overview | [M01 overview](../overviews/M01-window-and-gpu.md) |
-| Last updated | 2026-11-20 |
+| Last updated | 2026-11-25 |
 
 ## Goal
 
@@ -27,14 +27,14 @@ Open windows with winit and draw into them with wgpu on all three operating syst
 7. [x] Detect when the GPU device is lost, then recreate the device and surfaces and draw again. It is simulated with `device.destroy()` behind the `device-loss-testing` feature.
 8. [x] Support more than one window that shares one device.
 9. [x] Write `examples/window`, which opens a window and clears it to a colour. Keys: `N` opens a new window, `C` changes the colour, `L` simulates device loss, and `Esc` closes the window.
-10. [ ] Write a manual checklist for each operating system, and run it on Windows, Linux (X11 and Wayland) and macOS. The checklist is written below. Items 1, 2 and 4–7 are automated as `--self-test`. On Windows it found [B0001](../../bugs/B0001-vulkan-close-hangs-after-device-loss.md) and [B0002](../../bugs/B0002-dx12-panic-after-device-loss.md).
+10. [ ] Write a manual checklist for each operating system, and run it on Windows, Linux (X11 and Wayland) and macOS. The checklist is written below. Items 1, 2 and 4–7 are automated as `--self-test`, which passed in CI on Windows, Linux (X11, under Xvfb) and macOS on 2026-11-25. Still to run by hand: item 3 on every system, and the whole list under Wayland. On Windows it found [B0001](../../bugs/B0001-vulkan-close-hangs-after-device-loss.md) and [B0002](../../bugs/B0002-dx12-panic-after-device-loss.md).
 11. [x] Fix B0001 and B0002, so device recovery works and the program exits on every backend. Recovery now replaces the surfaces as well as the device ([D0009](../../decisions/D0009-replace-surfaces-on-device-loss.md), which replaces D0007).
 
 ## Prototypes and open decisions
 
 - **Ownership of the device and surfaces**: decided, one shared device ([D0007](../../decisions/D0007-one-shared-gpu-device.md)). Its recovery steps were replaced after B0001 and B0002 ([D0009](../../decisions/D0009-replace-surfaces-on-device-loss.md)).
 - **When to draw**: decided, on demand ([D0008](../../decisions/D0008-draw-on-demand.md)).
-- **Default wgpu backends**: wgpu's defaults, which can be overridden with the `WGPU_BACKEND` environment variable. Windows chose Vulkan on an NVIDIA TITAN RTX. Record what Linux and macOS choose in the report.
+- **Default wgpu backends**: wgpu's defaults, which can be overridden with the `WGPU_BACKEND` environment variable. Windows chose Vulkan on an NVIDIA TITAN RTX. The macOS CI runner chose Metal on an "Apple Paravirtual device". The Linux CI runner has only software Vulkan (lavapipe) installed; record the name it prints in the report.
 
 ## Risks
 
@@ -45,9 +45,9 @@ Open windows with winit and draw into them with wgpu on all three operating syst
 ## Testing
 
 - CI builds and runs unit tests on Windows, Linux and macOS: size conversion, colour conversion, `block_on`, and the empty-size check.
-- `cargo test -p dovetail-render --features device-loss-testing -- --ignored` destroys and recovers a headless device. It needs a GPU, so CI does not run it. It passed on Windows on 2026-11-20.
+- `cargo test -p dovetail-render --features device-loss-testing -- --ignored` destroys and recovers a headless device. It passed on Windows on 2026-11-20. CI runs it in the `window-self-test` job on all three systems, with software Vulkan on Linux.
 
-- `cargo run -p example-window -- --self-test` runs checklist items 1, 2 and 4–7 without anyone at the keyboard, and exits with a failure code if any fails. CI runs it on all three systems in the `window-self-test` job. The job blocks on Windows. It is allowed to fail on Linux and macOS until it has passed there once.
+- `cargo run -p example-window -- --self-test` runs checklist items 1, 2 and 4–7 without anyone at the keyboard, and exits with a failure code if any fails. CI runs it on all three systems in the `window-self-test` job. It first passed on Linux and macOS on 2026-11-25, and since then the job blocks on all three systems.
 
 Self-test results on Windows (2026-11-20, NVIDIA TITAN RTX), after the fixes for B0001 and B0002, with three runs per backend:
 
@@ -55,6 +55,16 @@ Self-test results on Windows (2026-11-20, NVIDIA TITAN RTX), after the fixes for
 |---|---|---|---|---|---|---|---|
 | Vulkan | Pass | Pass | Pass | Pass | Pass | Pass | Code 0, 3 of 3 runs |
 | DX12 | Pass | Pass | Pass | Pass | Pass | Pass | Code 0, 3 of 3 runs |
+
+Self-test results in CI on 2026-11-25:
+
+| System | 1 | 2 | 4 | 5 | 6 | 7 | Notes |
+|---|---|---|---|---|---|---|---|
+| Windows | Pass | Pass | Pass | Pass | Pass | Pass | |
+| Linux | Pass | Pass | Pass | Pass | Pass | Pass | X11 under Xvfb, software Vulkan |
+| macOS | Pass | Pass | Pass | Pass | Pass | Pass | Metal, Apple Paravirtual device, 800 × 600 at scale 1 |
+
+On macOS, the restore step first timed out. A frame asked for straight after restoring was skipped, because the window still counted as hidden, and nothing asked again. Windows now draw again when they become visible, and the self-test asks for a frame every half second after restoring.
 
 Manual checklist. Run `cargo run -p example-window` on each operating system, and on Linux under both X11 and Wayland:
 

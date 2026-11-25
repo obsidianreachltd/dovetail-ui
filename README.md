@@ -5,7 +5,7 @@
 Dovetail UI is for desktop software of every kind: small tools and utilities, dashboards, creative and engineering software, and large editors that open and save documents. You write components in Rust with a declarative `ui!` macro, and Dovetail does the rest: layout, GPU painting, text, input, accessibility and the behaviour people expect from a desktop application.
 
 > [!WARNING]
-> **Dovetail UI is in early development and has not been released.** The crates are not on crates.io yet, and the API will change. Most features have been built and tested on Windows only; Linux and macOS are written for but not yet checked. See [Status](#status).
+> **Dovetail UI is in early development and has not been released.** The crates are not on crates.io yet, and the API will change. Most features have been built and checked by hand on Windows only. On Linux and macOS, CI runs the tests and some example programs, but nothing has been checked by hand there yet. See [Status](#status).
 
 ## A first look
 
@@ -129,7 +129,8 @@ See [crates](docs/architecture/crates.md) for how they depend on each other.
 Dovetail is built in milestones. The [completion matrix](docs/milestones/README.md) shows where each one stands.
 
 - **Built and tested on Windows:** everything in [Features](#features).
-- **Waiting:** runs on Linux and macOS, and some checks by hand, such as with real screen readers and input methods.
+- **Tested in CI on Linux and macOS:** the workspace tests, the GPU painting tests, and the window and counter examples.
+- **Waiting:** checks by hand on Linux and macOS, such as with real screen readers, input methods and Wayland.
 - **Before the first release:** system settings and animation, window management, testing tools for applications, files from the system, and localisation.
 - **The first release** ([R01](docs/milestones/overviews/R01-first-release.md)): a validation editor that uses all of it, packages for each system, API documentation, and the crates published on crates.io.
 

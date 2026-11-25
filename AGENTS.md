@@ -12,7 +12,7 @@ Before you change anything, read the [goals](docs/vision/goals.md), the [princip
 
 - The [completion matrix](docs/milestones/README.md) shows each milestone's status. Work on the milestones that are In progress or Planned.
 - Each milestone's plan says what is built, what is left, and the follow-ups. Read the plan before you work on a milestone. Its results and decisions are there, not here.
-- Most work has been built and tested on Windows only. Linux and macOS code is type-checked, but most of it has not been run.
+- Most work has been built and checked by hand on Windows only. CI runs the tests on Linux and macOS, but most features have not been used by hand there.
 
 ## Decisions you must respect
 
