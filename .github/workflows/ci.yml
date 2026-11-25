@@ -92,12 +92,12 @@ jobs:
         timeout-minutes: 12
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
-          $RUN cargo test -p dovetail-render --all-features -- --ignored
-      # A crash in the GPU tests on Linux (signal 11) did not happen in a
-      # container with the same Ubuntu and lavapipe, so it may depend on the
-      # runner's processor. If they fail, run the image tests again one at a
-      # time under gdb, to show which test and where.
+          # On Linux the tests run one at a time: lavapipe has crashed with
+          # signal 11 when tests made their own devices at the same time (B0007).
+          if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; ONE="--test-threads=1"; else RUN=""; ONE=""; fi
+          $RUN cargo test -p dovetail-render --all-features -- --ignored $ONE
+      # If they still fail on Linux, run each GPU test binary again under gdb,
+      # to show which test crashed and where (B0007).
       - name: Backtrace of a GPU test crash (Linux)
         if: failure() && runner.os == 'Linux'
         timeout-minutes: 10
@@ -105,8 +105,11 @@ jobs:
           sudo apt-get install -y gdb
           lscpu | grep -E 'Model name|Flags' | cut -c1-300
           dpkg -l mesa-vulkan-drivers | tail -1
-          bin=$(cargo test -p dovetail-render --all-features --test images --no-run --message-format=json | jq -r 'select(.executable != null) | .executable')
-          xvfb-run -a gdb -batch -ex run -ex 'thread apply all bt 30' --args "$bin" --ignored --test-threads=1
+          for bin in $(cargo test -p dovetail-render --all-features --tests --no-run --message-format=json | jq -r 'select(.executable != null) | .executable'); do
+            echo "::group::$(basename "$bin")"
+            xvfb-run -a gdb -batch -ex run -ex 'thread apply all bt 30' --args "$bin" --ignored
+            echo "::endgroup::"
+          done
       - name: Window self-test (M01)
         timeout-minutes: 3
         shell: bash
