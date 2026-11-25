@@ -1,0 +1,5 @@
+error: the property `text` is given more than once
+  --> tests/fail/duplicate_property.rs:11:46
+   |
+11 | fn main() { let _ = ui! { Label { text: "a", text: "b" } }; }
+   |                                              ^^^^

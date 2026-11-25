@@ -1,0 +1,19 @@
+[package]
+name = "example-data"
+description = "M16 example: a list, a tree and a table of 100,000 rows each, and a property grid."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "data"
+path = "src/main.rs"
+
+[dependencies]
+dovetail-ui.workspace = true
+
+[lints]
+workspace = true

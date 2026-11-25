@@ -1,0 +1,25 @@
+[package]
+name = "dovetail-desktop"
+description = "Windows, event loop, input and platform integration for Dovetail UI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+accesskit.workspace = true
+accesskit_winit.workspace = true
+dovetail-core.workspace = true
+dovetail-layout.workspace = true
+dovetail-render.workspace = true
+dovetail-text.workspace = true
+winit.workspace = true
+
+[features]
+# Lets tests and examples cause a GPU device loss on purpose.
+device-loss-testing = ["dovetail-render/device-loss-testing"]
+
+[lints]
+workspace = true

@@ -1,0 +1,19 @@
+[package]
+name = "example-commands"
+description = "M08 example: a list editor with menus, a toolbar, shortcuts, command search, and undo and redo."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "commands"
+path = "src/main.rs"
+
+[dependencies]
+dovetail-ui.workspace = true
+
+[lints]
+workspace = true

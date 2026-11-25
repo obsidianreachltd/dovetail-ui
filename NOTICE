@@ -1,0 +1,19 @@
+Dovetail UI
+Copyright 2026 Obsidian Reach Ltd and the Dovetail UI contributors
+
+Licensed under the Apache License, Version 2.0 (LICENSE-APACHE or
+https://www.apache.org/licenses/LICENSE-2.0) or the MIT licence
+(LICENSE-MIT or https://opensource.org/licenses/MIT), at your option.
+This software may not be copied, modified or distributed except
+according to those terms.
+
+This software includes data derived from the Unicode Character Database
+(crates/dovetail-text/src/unicode/tables.rs and
+crates/dovetail-text/tests/data/grapheme_break_test.txt).
+Copyright (c) 1991-2025 Unicode, Inc. Licensed under the Unicode License v3:
+https://www.unicode.org/license.txt
+
+The test images in crates/dovetail-image/tests/pngsuite/ are from PngSuite.
+Copyright (c) Willem van Schaik, 1999. Permission to use, copy, and
+distribute these images for any purpose and without fee is granted
+(see README.original in that folder).

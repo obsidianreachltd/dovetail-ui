@@ -1,0 +1,19 @@
+[package]
+name = "dovetail-documents"
+description = "Documents for Dovetail UI: saving, opening, unsaved changes, recovery after a crash, and progress."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+dovetail-commands.workspace = true
+dovetail-controls.workspace = true
+dovetail-core.workspace = true
+dovetail-macros.workspace = true
+dovetail-theme.workspace = true
+
+[lints]
+workspace = true

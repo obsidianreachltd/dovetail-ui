@@ -1,0 +1,15 @@
+[package]
+name = "dovetail-image"
+description = "PNG and JPEG decoding, and icons from SVG outlines, for Dovetail UI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+dovetail-core.workspace = true
+
+[lints]
+workspace = true

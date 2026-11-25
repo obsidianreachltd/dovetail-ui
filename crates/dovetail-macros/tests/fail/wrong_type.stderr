@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/fail/wrong_type.rs:11:52
+   |
+11 | fn main() { let _ = ui! { Label { text: "a", size: "large" } }; }
+   |                                              ----  ^^^^^^^ expected `u32`, found `&str`
+   |                                              |
+   |                                              arguments to this method are incorrect
+   |
+note: method defined here
+  --> tests/fail/wrong_type.rs:7:55
+   |
+ 6 | #[component]
+   | ------------
+ 7 | fn Label(#[prop(into)] text: String, #[prop(default)] size: u32) -> View {
+   |                                                       ^^^^

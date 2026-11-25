@@ -1,0 +1,19 @@
+[package]
+name = "dovetail-theme"
+description = "Themes for Dovetail UI: colour schemes from a seed colour, text styles, shapes, light and dark."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+dovetail-core.workspace = true
+dovetail-macros.workspace = true
+
+[dev-dependencies]
+dovetail-layout.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,8 @@
+error[E0599]: no method named `colour` found for struct `__LabelPropsBuilder<__text>` in the current scope
+  --> tests/fail/unknown_property.rs:11:46
+   |
+ 6 | #[component]
+   | ------------ method `colour` not found for this struct
+...
+11 | fn main() { let _ = ui! { Label { text: "a", colour: 1 } }; }
+   |                                              ^^^^^^ method not found in `__LabelPropsBuilder<Set>`

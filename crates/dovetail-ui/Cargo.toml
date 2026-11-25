@@ -1,0 +1,32 @@
+[package]
+name = "dovetail-ui"
+description = "Dovetail UI: a Rust framework for desktop applications on Windows, Linux and macOS."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+# Published as dovetail-ui because `dovetail` is taken on crates.io (D0006).
+# Applications still write `use dovetail::...`.
+[lib]
+name = "dovetail"
+
+[dependencies]
+dovetail-commands.workspace = true
+dovetail-docking.workspace = true
+dovetail-image.workspace = true
+dovetail-documents.workspace = true
+dovetail-theme.workspace = true
+dovetail-core.workspace = true
+dovetail-macros.workspace = true
+dovetail-text.workspace = true
+dovetail-layout.workspace = true
+dovetail-desktop.workspace = true
+dovetail-render.workspace = true
+dovetail-controls.workspace = true
+dovetail-data.workspace = true
+
+[lints]
+workspace = true

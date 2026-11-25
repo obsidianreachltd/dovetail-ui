@@ -1,0 +1,19 @@
+[package]
+name = "example-documents"
+description = "M11 example: a small board of parts as a document, with saving, opening, unsaved changes, recovery after a crash, and a long check with progress."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "documents"
+path = "src/main.rs"
+
+[dependencies]
+dovetail-ui.workspace = true
+
+[lints]
+workspace = true

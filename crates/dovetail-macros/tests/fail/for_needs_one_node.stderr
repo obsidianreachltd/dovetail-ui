@@ -1,0 +1,5 @@
+error: the body of a `for` must be exactly one node
+  --> tests/fail/for_needs_one_node.rs:11:47
+   |
+11 | fn main() { let items = [1, 2]; let _ = ui! { for i in items, key = i { "a" "b" } }; }
+   |                                               ^^^

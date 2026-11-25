@@ -1,0 +1,23 @@
+[package]
+name = "dovetail-data"
+description = "Virtualised lists, trees and tables, and a property grid, for Dovetail UI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+dovetail-core.workspace = true
+dovetail-image.workspace = true
+dovetail-controls.workspace = true
+dovetail-commands.workspace = true
+dovetail-macros.workspace = true
+dovetail-theme.workspace = true
+
+[dev-dependencies]
+dovetail-layout.workspace = true
+
+[lints]
+workspace = true

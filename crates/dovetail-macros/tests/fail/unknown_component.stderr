@@ -1,0 +1,14 @@
+error[E0425]: cannot find type `Lable` in this scope
+  --> tests/fail/unknown_component.rs:11:27
+   |
+ 6 | #[component]
+   | ------------ similarly named struct `Label` defined here
+...
+11 | fn main() { let _ = ui! { Lable { text: "a" } }; }
+   |                           ^^^^^
+   |
+help: a struct with a similar name exists
+   |
+11 - fn main() { let _ = ui! { Lable { text: "a" } }; }
+11 + fn main() { let _ = ui! { Label { text: "a" } }; }
+   |

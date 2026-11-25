@@ -1,0 +1,19 @@
+[package]
+name = "example-images"
+description = "M17 example: PNG and JPEG images at their size, fitted and filled, a large image loaded while the window draws, and icons in every control that takes them."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "images"
+path = "src/main.rs"
+
+[dependencies]
+dovetail-ui.workspace = true
+
+[lints]
+workspace = true

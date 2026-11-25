@@ -1,0 +1,20 @@
+[package]
+name = "example-window"
+description = "M01 example: opens windows and clears them to a colour with wgpu."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "window"
+path = "src/main.rs"
+
+[dependencies]
+dovetail-desktop = { workspace = true, features = ["device-loss-testing"] }
+dovetail-render.workspace = true
+
+[lints]
+workspace = true

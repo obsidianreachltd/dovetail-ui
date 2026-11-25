@@ -1,0 +1,19 @@
+[package]
+name = "example-themes"
+description = "M14 example: one window in the light, dark, a custom and the system's theme, with an override and a theme extension."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "themes"
+path = "src/main.rs"
+
+[dependencies]
+dovetail-ui.workspace = true
+
+[lints]
+workspace = true

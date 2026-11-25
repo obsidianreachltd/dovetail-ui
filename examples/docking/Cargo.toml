@@ -1,0 +1,19 @@
+[package]
+name = "example-docking"
+description = "M10 example: an editor-like window with dockable panels, tabs, splits and floating windows, saved between runs."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "docking"
+path = "src/main.rs"
+
+[dependencies]
+dovetail-ui.workspace = true
+
+[lints]
+workspace = true

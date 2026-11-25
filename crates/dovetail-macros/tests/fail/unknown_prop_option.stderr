@@ -1,0 +1,5 @@
+error: unknown property option; use `default`, `default = value` or `into`
+ --> tests/fail/unknown_prop_option.rs:6:17
+  |
+6 | fn Label(#[prop(colour)] text: String) -> dovetail::View {
+  |                 ^^^^^^

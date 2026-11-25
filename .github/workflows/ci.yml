@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Build
+        run: cargo build --workspace
+      - name: Test
+        run: cargo test --workspace --exclude dovetail-macros
+      - name: New project builds (M05)
+        run: cargo test -p dovetail-cli --test new_project -- --ignored
+
+  # The compile-fail tests lock rustc's error messages, which change between
+  # Rust versions, so they run on one pinned version and one system.
+  # Upgrade the version on purpose and regenerate the .stderr files
+  # (crates/dovetail-macros/tests/compile_fail.rs).
+  macro-errors:
+    name: macro error messages (Rust 1.94.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Test dovetail-macros
+        run: cargo test -p dovetail-macros
+
+  window-self-test:
+    # Opens real windows and draws with the GPU (M01), and runs the GPU
+    # painting tests (M04). It blocks on Windows,
+    # where it has passed. On Linux and macOS it reports but does not block
+    # until it has passed there once.
+    name: window self-test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os != 'windows-latest' }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install a display server and software Vulkan (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb mesa-vulkan-drivers libvulkan1
+      - name: Build
+        run: cargo build -p example-window -p example-counter
+      - name: Counter self-test (M04)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
+          timeout 120 $RUN cargo run -p example-counter -- --self-test
+      - name: GPU tests (painting and device loss)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
+          $RUN cargo test -p dovetail-render --all-features -- --ignored
+      - name: Self-test (Linux, X11 under Xvfb)
+        if: runner.os == 'Linux'
+        run: timeout 120 xvfb-run -a cargo run -p example-window -- --self-test
+      - name: Self-test (Windows and macOS)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: timeout 120 cargo run -p example-window -- --self-test

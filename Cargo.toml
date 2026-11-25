@@ -1,0 +1,49 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "examples/*", "prototypes/*", "tools/*"]
+exclude = ["tools/access-check", "tools/fonts", "tools/images", "tools/ucd"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT OR Apache-2.0"
+authors = ["Obsidian Reach Ltd"]
+# Not published until the first release (R01), which publishes the crates in order.
+publish = false
+
+[workspace.dependencies]
+dovetail-ui = { path = "crates/dovetail-ui", version = "0.1.0" }
+dovetail-core = { path = "crates/dovetail-core", version = "0.1.0" }
+dovetail-macros = { path = "crates/dovetail-macros", version = "0.1.0" }
+dovetail-layout = { path = "crates/dovetail-layout", version = "0.1.0" }
+dovetail-render = { path = "crates/dovetail-render", version = "0.1.0" }
+dovetail-desktop = { path = "crates/dovetail-desktop", version = "0.1.0" }
+dovetail-controls = { path = "crates/dovetail-controls", version = "0.1.0" }
+dovetail-text = { path = "crates/dovetail-text", version = "0.1.0" }
+dovetail-commands = { path = "crates/dovetail-commands", version = "0.1.0" }
+dovetail-docking = { path = "crates/dovetail-docking", version = "0.1.0" }
+dovetail-documents = { path = "crates/dovetail-documents", version = "0.1.0" }
+dovetail-theme = { path = "crates/dovetail-theme", version = "0.1.0" }
+dovetail-data = { path = "crates/dovetail-data", version = "0.1.0" }
+dovetail-image = { path = "crates/dovetail-image", version = "0.1.0" }
+
+# Foundation libraries (D0002). Pinned to a minor version; see M01.
+winit = "=0.30.13"
+# AccessKit and its winit adapter, pinned to match winit (D0015).
+accesskit = "=0.25.2"
+accesskit_winit = "=0.34.2"
+wgpu = "=30.0.2"
+
+# Build-time only, for dovetail-macros (D0011).
+syn = { version = "3.0.10", features = ["full"] }
+quote = "1.0.47"
+proc-macro2 = "1.0.107"
+trybuild = "1.0.125"
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }

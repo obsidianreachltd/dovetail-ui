@@ -1,0 +1,13 @@
+# Codex Directory (randomly added by VSCode)
+.codex/
+
+/target
+
+# Unicode Character Database files, fetched by tools/ucd-gen (D0014)
+/tools/ucd/data/
+
+# Test fonts downloaded for the CFF tests (M06); not part of the repository
+/tools/fonts/
+
+# Test images from the Go source tree (M17); not part of the repository
+/tools/images/

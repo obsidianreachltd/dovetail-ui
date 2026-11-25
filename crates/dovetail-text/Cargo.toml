@@ -1,0 +1,12 @@
+[package]
+name = "dovetail-text"
+description = "Fonts, glyph rasterising, font fallback and text shaping for Dovetail UI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

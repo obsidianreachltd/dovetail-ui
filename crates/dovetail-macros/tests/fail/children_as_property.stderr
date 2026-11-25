@@ -1,0 +1,5 @@
+error: write children as nodes inside the braces, not as `children:`
+  --> tests/fail/children_as_property.rs:11:46
+   |
+11 | fn main() { let _ = ui! { Label { text: "a", children: vec![] } }; }
+   |                                              ^^^^^^^^

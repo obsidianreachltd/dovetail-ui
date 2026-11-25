@@ -1,0 +1,26 @@
+[package]
+name = "dovetail-render"
+description = "Rendering interfaces and GPU integration for Dovetail UI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+dovetail-core.workspace = true
+dovetail-image.workspace = true
+dovetail-layout.workspace = true
+dovetail-text.workspace = true
+wgpu.workspace = true
+
+[dev-dependencies]
+dovetail-image.workspace = true
+
+[features]
+# Lets tests and examples cause a GPU device loss on purpose.
+device-loss-testing = []
+
+[lints]
+workspace = true

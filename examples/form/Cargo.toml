@@ -1,0 +1,19 @@
+[package]
+name = "example-form"
+description = "A form with labelled text fields, a toggle and buttons, for trying input and controls together."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "form"
+path = "src/main.rs"
+
+[dependencies]
+dovetail-ui.workspace = true
+
+[lints]
+workspace = true

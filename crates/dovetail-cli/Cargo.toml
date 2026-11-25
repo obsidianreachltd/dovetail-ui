@@ -1,0 +1,16 @@
+﻿[package]
+name = "dovetail-cli"
+description = "The dovetail command: create, run and build Dovetail UI applications."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "dovetail"
+path = "src/main.rs"
+
+[lints]
+workspace = true
