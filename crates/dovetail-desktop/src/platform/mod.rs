@@ -90,29 +90,22 @@ pub(crate) fn appearance() -> dovetail_core::SystemAppearance {
   }
 }
 
-/// True when scrollbars show only while scrolling, as macOS does with its
-/// usual setting (M15, D0021). Windows and Linux always show them.
-pub(crate) fn overlay_scrollbars() -> bool {
-  #[cfg(target_os = "macos")]
-  {
-    macos::overlay_scrollbars()
-  }
-  #[cfg(not(target_os = "macos"))]
-  {
-    false
-  }
-}
-
-/// How long a text caret stays on, and then off: the system setting on
-/// Windows, and 530 ms elsewhere. `None` when the user turned blinking off.
-pub(crate) fn caret_blink_time() -> Option<std::time::Duration> {
+/// Less motion, the text scale, the caret blink, double-clicks and the
+/// scroll bar style (M18, D0028): from `SystemParametersInfo`, the
+/// registry and user32 on Windows, AppKit on macOS, and GNOME's settings
+/// through `gsettings` elsewhere.
+pub(crate) fn settings() -> dovetail_core::SystemSettings {
   #[cfg(windows)]
   {
-    windows::caret_blink_time()
+    windows::settings()
   }
-  #[cfg(not(windows))]
+  #[cfg(target_os = "macos")]
   {
-    Some(std::time::Duration::from_millis(530))
+    macos::settings()
+  }
+  #[cfg(not(any(windows, target_os = "macos")))]
+  {
+    crate::system_settings::from_gsettings()
   }
 }
 
@@ -139,12 +132,13 @@ pub(crate) fn clipboard() -> Option<Rc<dyn Clipboard>> {
 
 #[cfg(test)]
 mod tests {
-  /// Reading the system's language and blink time changes nothing, so it
+  /// Reading the system's language and settings changes nothing, so it
   /// runs every time.
   #[test]
-  fn the_system_language_and_blink_time_read() {
+  fn the_system_language_and_settings_read() {
     let tag = super::language();
-    println!("language: {tag:?}, blink: {:?}", super::caret_blink_time());
+    println!("language: {tag:?}");
+    println!("settings: {:?}", super::settings());
     #[cfg(windows)]
     {
       let tag = tag.expect("Windows has a display language");

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use dovetail::controls::Tooltip;
 use dovetail::prelude::*;
-use dovetail_core::{NamedKey, Role};
+use dovetail_core::{NamedKey, Role, Signal};
 use dovetail_testing::{TestUi, label, role, text};
 
 #[component]
@@ -250,4 +250,33 @@ fn a_drag_and_drop_runs_with_no_window() {
   ui.key(NamedKey::Escape);
   assert!(!ui.dragging());
   assert_eq!(*log.borrow(), ["Leave card", "ended Cancelled"]);
+}
+
+thread_local! {
+  static TIPPED: std::cell::Cell<Option<Signal<bool>>> = const { std::cell::Cell::new(None) };
+}
+
+#[component]
+fn RemovableTip() -> View {
+  let shown = use_state(|| true);
+  TIPPED.set(Some(shown));
+  let tip: View = if shown.get() {
+    ui! { Tooltip { text: "Saves the settings", Button { text: "Save" } } }
+  } else {
+    View::text("Gone")
+  };
+  ui! { Column { { tip } } }
+}
+
+/// B0009: a tooltip removed while its wait runs is not stepped on when the
+/// wait ends.
+#[test]
+fn a_tooltip_removed_while_it_waits_stops_quietly() {
+  let mut ui = TestUi::new(ui! { RemovableTip {} });
+  ui.hover(label("Save"));
+  TIPPED.with(|t| t.get().expect("state").set(false));
+  ui.update();
+  ui.advance(Duration::from_millis(600));
+  ui.find(text("Gone"));
+  assert!(!ui.has(role(Role::Tooltip)));
 }

@@ -4,7 +4,7 @@
 use dovetail::{
   Align, Border, Callback, Children, Color, Edges, Element, ElementKind,
   FocusTarget, KeyCode, KeyHandler, NamedKey, Role, Size, Style, View,
-  current_component,
+  current_component, use_animated,
 };
 use dovetail_macros::component;
 use dovetail_theme::theme;
@@ -92,6 +92,10 @@ pub fn Link(
 /// Enter or Space while it has focus, calls `on_toggle` with the new
 /// state; the component that owns it updates `open`. What is inside shows
 /// only while it is open.
+///
+/// The content fades and slides in as it opens, and out as it closes,
+/// over the theme's medium [`Motion`](dovetail_theme::Motion) time, unless
+/// less motion is set (M18). It is laid out at its full size at once.
 #[component]
 pub fn Collapsible(
   #[prop(into)] title: String,
@@ -133,11 +137,16 @@ pub fn Collapsible(
       View::text(title.clone()),
     ])
     .into();
+  // How open it is, from 0 to 1. Closing, the content stays until it has
+  // faded out.
+  let shown = use_animated(if open { 1.0f32 } else { 0.0 }, t.motion.medium());
   let mut parts = vec![header];
-  if open {
+  if open || shown > 0.0 {
     parts.push(
       Element::new(ElementKind::Column)
         .style(Style {
+          opacity: shown,
+          offset: (0.0, (shown - 1.0) * t.spacing.of(2.0)),
           padding: Edges {
             left: t.spacing.of(4.5),
             top: t.spacing.of(1.0),

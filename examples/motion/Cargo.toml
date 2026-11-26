@@ -1,0 +1,21 @@
+[package]
+name = "example-motion"
+description = "M18 example: the system's settings, shown as they change, and controls that move unless less motion is set."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "motion"
+path = "src/main.rs"
+
+[dependencies]
+dovetail-ui.workspace = true
+# The self-test drives a real window (M20).
+dovetail-testing = { workspace = true, features = ["windows"] }
+
+[lints]
+workspace = true

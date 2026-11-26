@@ -959,6 +959,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "example-motion"
+version = "0.1.0"
+dependencies = [
+ "dovetail-testing",
+ "dovetail-ui",
+]
+
+[[package]]
 name = "example-text-field"
 version = "0.1.0"
 dependencies = [

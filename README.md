@@ -91,6 +91,7 @@ Run any example from the repository root with `cargo run -p <name>`. Most also t
 | `example-commands` | Commands in menus, a toolbar, shortcuts and command search, with undo |
 | `example-data` | A list, a tree and a table of 100,000 rows each, and a property grid |
 | `example-images` | Images, icons in every control that takes them, and animations |
+| `example-motion` | The system's settings as they change, and controls that move unless less motion is set |
 | `example-gpu-canvas` | A PCB-like scene drawn with its own wgpu pipeline, with pan, zoom and selection |
 | `example-docking` | An editor-like window with dockable and floating panels |
 | `example-documents` | A small board of parts kept as a document, with saving and recovery |

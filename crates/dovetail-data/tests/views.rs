@@ -770,6 +770,11 @@ fn Inspector() -> View {
 
 #[test]
 fn the_property_grid_edits_values_of_each_kind_and_each_edit_undoes() {
+  // Sections close at once, with no frames to fade them in this window.
+  dovetail::set_system_settings(dovetail::SystemSettings {
+    reduce_motion: true,
+    ..dovetail::SystemSettings::default()
+  });
   let mut w = Window::open(ui! { Inspector {} });
   let (history, shape) = SHAPE.get().unwrap();
   // A check box change is one step.

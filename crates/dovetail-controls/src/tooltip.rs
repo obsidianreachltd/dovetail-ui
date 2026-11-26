@@ -41,7 +41,10 @@ pub fn Tooltip(
       timer.set(Some(Task::after(
         TOOLTIP_DELAY,
         Callback::new(move |()| {
-          timer.set(None);
+          // The tooltip may have gone while it waited (B0009).
+          if timer.try_update(|t| *t = None).is_err() {
+            return;
+          }
           if hovering.get() {
             shown.set(true);
           }

@@ -34,6 +34,7 @@ Before you change anything, read the [goals](docs/vision/goals.md), the [princip
 - **Edits go through `History`**, so they can be undone. Change a `Document` only with `edit`.
 - **Colours come from the theme.** Controls read `theme()`. Never add a fixed colour to the control packages: a test scans them.
 - **Accessibility:** give every control a role and every text field a `label`. A picture has a label, or is decoration.
+- **Animate with `use_animated`**, not timers of your own, so less motion and tests reach it. Controls take their `Transition` from `theme().motion`. Animate how far a change has gone, from 0 to 1, and mix the theme's colours with it, so a theme that fades is not held back.
 - **Applications use Dovetail's wgpu**, `dovetail::render::wgpu`, in canvases.
 - **After a GPU device loss**, replace the surfaces as well as the device. Never reconfigure an old surface with a new device (see `Gpu::replacing`).
 - **Unicode tables** are generated from the UCD by a tool ([D0014](docs/decisions/D0014-unicode-data.md)). Never edit them by hand.

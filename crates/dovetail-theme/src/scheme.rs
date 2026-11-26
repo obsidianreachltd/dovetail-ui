@@ -2,7 +2,7 @@
 //! tonal palettes in OKLCH (M14, D0019), as Flutter's
 //! `ColorScheme.fromSeed` makes them with Material's HCT.
 
-use dovetail::Color;
+use dovetail::{Animate, Color};
 
 use crate::color::{Oklch, contrast, tone};
 
@@ -66,6 +66,59 @@ pub struct ColorScheme {
   pub selection: Color,
   /// What darkens the window behind a dialog.
   pub scrim: Color,
+}
+
+/// A scheme fades colour by colour, in linear light, when a theme changes
+/// (M18). It is dark or light as soon as it starts to turn.
+impl Animate for ColorScheme {
+  fn animate(
+    &self,
+    to: &Self,
+    t: f32,
+  ) -> Self {
+    ColorScheme {
+      brightness: to.brightness,
+      primary: self.primary.animate(&to.primary, t),
+      on_primary: self.on_primary.animate(&to.on_primary, t),
+      primary_container: self
+        .primary_container
+        .animate(&to.primary_container, t),
+      on_primary_container: self
+        .on_primary_container
+        .animate(&to.on_primary_container, t),
+      secondary_container: self
+        .secondary_container
+        .animate(&to.secondary_container, t),
+      on_secondary_container: self
+        .on_secondary_container
+        .animate(&to.on_secondary_container, t),
+      surface: self.surface.animate(&to.surface, t),
+      on_surface: self.on_surface.animate(&to.on_surface, t),
+      on_surface_variant: self
+        .on_surface_variant
+        .animate(&to.on_surface_variant, t),
+      surface_container_low: self
+        .surface_container_low
+        .animate(&to.surface_container_low, t),
+      surface_container: self
+        .surface_container
+        .animate(&to.surface_container, t),
+      surface_container_high: self
+        .surface_container_high
+        .animate(&to.surface_container_high, t),
+      surface_container_highest: self
+        .surface_container_highest
+        .animate(&to.surface_container_highest, t),
+      outline: self.outline.animate(&to.outline, t),
+      outline_variant: self
+        .outline_variant
+        .animate(&to.outline_variant, t),
+      error: self.error.animate(&to.error, t),
+      on_error: self.on_error.animate(&to.on_error, t),
+      selection: self.selection.animate(&to.selection, t),
+      scrim: self.scrim.animate(&to.scrim, t),
+    }
+  }
 }
 
 /// One palette: a hue and chroma whose tones the roles take.

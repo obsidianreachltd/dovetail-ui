@@ -324,6 +324,9 @@ pub struct LayoutBox {
   pub clip: Rect,
   /// Its children, as indexes into [`Layout::boxes`].
   pub children: Vec<usize>,
+  /// How solid it is, from 0 to 1: its own `Style::opacity` times its
+  /// parents' (M18).
+  pub opacity: f32,
 }
 
 /// Counts from one [`Layout::update`], to check that only changed parts are
@@ -499,6 +502,7 @@ impl Layout {
         root,
         (0.0, 0.0),
         window,
+        1.0,
         &mut boxes,
         &mut order,
       );
@@ -511,6 +515,12 @@ impl Layout {
           .map(|b| b.rect);
         let at =
           layer_position(&nodes[layer.node].content, parent, size, window);
+        // A layer fades with the element it belongs to.
+        let opacity = layer
+          .parent
+          .and_then(|p| order.get(p).copied())
+          .and_then(|i| boxes.get(i))
+          .map_or(1.0, |b| b.opacity);
         place(
           &nodes,
           &cache,
@@ -518,6 +528,7 @@ impl Layout {
           layer.node,
           at,
           window,
+          opacity,
           &mut boxes,
           &mut order,
         );
@@ -535,7 +546,8 @@ impl Layout {
     let mut seen = HashSet::with_capacity(boxes.len());
     let mut painted = HashMap::with_capacity(boxes.len());
     for b in &boxes {
-      let look = look_of(&b.content);
+      let look =
+        look_of(&b.content) ^ u64::from(b.opacity.to_bits()).rotate_left(32);
       let visible = b.rect.intersect(&b.clip);
       match self.painted.get(&b.key) {
         Some((old, old_look)) if *old == visible && *old_look == look => {},
@@ -1334,11 +1346,21 @@ fn place(
   index: usize,
   (x, y): (f32, f32),
   clip: Rect,
+  opacity: f32,
   boxes: &mut Vec<LayoutBox>,
   order: &mut [usize],
 ) {
   let node = &nodes[index];
   let cached = &cache[&node.key];
+  // An offset moves the box and everything in it (M18).
+  let (x, y, opacity) = match &node.content {
+    Content::Element(e) => (
+      x + e.style.offset.0,
+      y + e.style.offset.1,
+      opacity * e.style.opacity.clamp(0.0, 1.0),
+    ),
+    _ => (x, y, opacity),
+  };
   let rect = Rect::new(x, y, cached.size.0, cached.size.1);
   let inner_clip = match &node.content {
     Content::Element(e) if e.style.clip => clip.intersect(&rect),
@@ -1358,6 +1380,7 @@ fn place(
     rect,
     clip,
     children: node.children.clone(),
+    opacity,
   });
   for (&child, &(dx, dy)) in node.children.iter().zip(&cached.offsets) {
     place(
@@ -1367,6 +1390,7 @@ fn place(
       child,
       (x + dx - sx, y + dy - sy),
       inner_clip,
+      opacity,
       boxes,
       order,
     );

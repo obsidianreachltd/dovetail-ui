@@ -3,8 +3,9 @@
 
 use std::any::{Any, TypeId};
 use std::rc::Rc;
+use std::time::Duration;
 
-use dovetail::{Color, Edges, FontWeight};
+use dovetail::{Color, Curve, Edges, FontWeight, Transition};
 
 use crate::color::with_alpha;
 use crate::scheme::{Brightness, ColorScheme, DOVETAIL_SLATE};
@@ -43,6 +44,25 @@ pub struct TextTheme {
   pub label: TextStyle,
 }
 
+impl TextTheme {
+  /// Every style with its size multiplied by `scale`, as the system's text
+  /// size asks (M18). The outermost [`Theme`](crate::Theme) does this with
+  /// [`text_scale`](dovetail::text_scale).
+  pub fn scaled(
+    self,
+    scale: f32,
+  ) -> TextTheme {
+    let s = |t: TextStyle| TextStyle { size: t.size * scale, ..t };
+    TextTheme {
+      headline: s(self.headline),
+      title: s(self.title),
+      body: s(self.body),
+      body_small: s(self.body_small),
+      label: s(self.label),
+    }
+  }
+}
+
 impl Default for TextTheme {
   fn default() -> Self {
     TextTheme {
@@ -70,6 +90,49 @@ pub struct Shapes {
 impl Default for Shapes {
   fn default() -> Self {
     Shapes { small: 4.0, medium: 6.0, large: 8.0 }
+  }
+}
+
+/// How long controls take to move (M18), as Material's and Fluent's
+/// durations. With less motion set on the system, nothing moves.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Motion {
+  /// Small changes: a switch's knob, a check box's tick, a colour.
+  pub short: Duration,
+  /// Larger changes: a section opening, the theme changing.
+  pub medium: Duration,
+  /// The curve both use.
+  pub curve: Curve,
+}
+
+impl Default for Motion {
+  fn default() -> Self {
+    Motion {
+      short: Duration::from_millis(120),
+      medium: Duration::from_millis(250),
+      curve: Curve::EaseOut,
+    }
+  }
+}
+
+impl Motion {
+  /// A transition for small changes.
+  pub fn short(&self) -> Transition {
+    Transition::new(self.short, self.curve)
+  }
+
+  /// A transition for larger changes.
+  pub fn medium(&self) -> Transition {
+    Transition::new(self.medium, self.curve)
+  }
+
+  /// No motion: everything jumps, as with [`Transition::NONE`].
+  pub fn none() -> Motion {
+    Motion {
+      short: Duration::ZERO,
+      medium: Duration::ZERO,
+      curve: Curve::Linear,
+    }
   }
 }
 
@@ -311,6 +374,8 @@ pub struct ThemeData {
   pub shapes: Shapes,
   /// Space between and inside things.
   pub spacing: Spacing,
+  /// How long controls take to move (M18).
+  pub motion: Motion,
   /// Buttons.
   pub button: ButtonTheme,
   /// Switches.
@@ -358,6 +423,7 @@ impl ThemeData {
       text: TextTheme::default(),
       shapes: Shapes::default(),
       spacing: Spacing::default(),
+      motion: Motion::default(),
       button: ButtonTheme::default(),
       toggle: ToggleTheme::default(),
       text_field: TextFieldTheme::default(),

@@ -14,6 +14,7 @@ Each bug has its own file, `B0001-short-name.md`, written from the [template](_t
 | [B0006](B0006-text-field-right-walk-flaky.md) | The text field self-test's Right walk sometimes ends early | Open | Low | M13 | Windows |
 | [B0007](B0007-gpu-tests-crash-on-linux-ci.md) | GPU tests sometimes crash on the Linux CI runner | Open | Medium | M00 | Linux |
 | [B0008](B0008-controls-tooltip-step-flaky.md) | The controls self-test's tooltip step sometimes times out | Open | Low | M15 | Windows |
+| [B0009](B0009-timer-after-component-removed.md) | A timer that ends after its component has gone panics | Fixed | High | M18 | All |
 
 ## Status words
 

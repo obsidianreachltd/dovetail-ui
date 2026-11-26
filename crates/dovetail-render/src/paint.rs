@@ -953,9 +953,9 @@ impl Painter {
     for (i, b) in boxes.iter().enumerate() {
       let under = backdrop[i];
       let own = match &b.content {
-        Content::Element(e) if e.style.background.a > 0.0 => {
+        Content::Element(e) if e.style.background.a * b.opacity > 0.0 => {
           let c = linear(e.style.background);
-          let a = e.style.background.a;
+          let a = e.style.background.a * b.opacity;
           [
             under[0] + (c[0] - under[0]) * a,
             under[1] + (c[1] - under[1]) * a,
@@ -977,6 +977,9 @@ impl Painter {
         scrollbar(&mut rects, &mut batches, bar, *wide, colors, scale, region);
       }
       let scissor = intersect(to_pixels(b.clip, scale), region);
+      // How solid this box is, with its parents (M18). Everything it
+      // draws, apart from a canvas, has its alpha multiplied by it.
+      let fade = |c: Color| Color { a: c.a * b.opacity, ..c };
       let mut selection: Vec<(Rect, Color, [u32; 4])> = Vec::new();
       if let Content::Element(e) = &b.content
         && let Some(cursor) = &e.text_cursor
@@ -996,13 +999,17 @@ impl Painter {
           geometry
             .selection
             .iter()
-            .map(|r| (*r, tint, clip)),
+            .map(|r| (*r, fade(tint), clip)),
         );
         if let Content::Text { color, .. } = &text.content {
           // The caret and the underline under text being composed.
           let caret = geometry.caret.filter(|_| caret_visible);
           for r in caret.iter().chain(&geometry.composing) {
-            carets.push((*r, *color, clip));
+            carets.push((
+              *r,
+              Color { a: color.a * text.opacity, ..*color },
+              clip,
+            ));
           }
         }
       }
@@ -1021,13 +1028,14 @@ impl Painter {
       match &b.content {
         Content::Element(e) => {
           let s = &e.style;
-          let visible = s.background.a > 0.0
-            || (s.border.width > 0.0 && s.border.color.a > 0.0);
+          let visible = b.opacity > 0.0
+            && (s.background.a > 0.0
+              || (s.border.width > 0.0 && s.border.color.a > 0.0));
           if visible {
             let index = (rects.len() / 16) as u32;
             rects.extend(rect);
-            rects.extend(linear(s.background));
-            rects.extend(linear(s.border.color));
+            rects.extend(linear(fade(s.background)));
+            rects.extend(linear(fade(s.border.color)));
             rects.extend([
               s.radius * scale,
               s.border.width * scale,
@@ -1083,7 +1091,13 @@ impl Painter {
             }
           }
         },
+        Content::Picture { .. } | Content::Text { .. } if b.opacity <= 0.0 => {
+        },
         Content::Picture { picture, color, .. } => {
+          // An icon drawn as an image keeps its colour, so it is drawn once;
+          // the image's own opacity fades it.
+          let solid = *color;
+          let color = &fade(*color);
           if let Some(icon) = picture.source::<Icon>() {
             let fit = if picture.fit == Fit::Stretch {
               Fit::Stretch
@@ -1129,8 +1143,8 @@ impl Painter {
             } else {
               // A large icon, or one with colours of its own (D0024), is
               // drawn once at this size, in its colours, as an image.
-              let key = large_icon_key(icon.id(), w, h, *color);
-              let ink = *color;
+              let key = large_icon_key(icon.id(), w, h, solid);
+              let ink = solid;
               let make = || {
                 Bitmap::from_rgba(icon.render_rgba(
                   w,
@@ -1142,7 +1156,7 @@ impl Painter {
                 let index = (images.len() / 12) as u32;
                 images.extend([x, y, w as f32, h as f32]);
                 images.extend([0.0, 0.0, 1.0, 1.0]);
-                images.extend([1.0, 0.0, 0.0, 0.0]);
+                images.extend([b.opacity, 0.0, 0.0, 0.0]);
                 push(&mut batches, Pipeline::Image(key), scissor, index);
               } else {
                 waiting = Some(waiting.map_or(b.rect, |w| w.union(&b.rect)));
@@ -1170,7 +1184,7 @@ impl Painter {
                 let index = (images.len() / 12) as u32;
                 images.extend([x0, y0, x1 - x0, y1 - y0]);
                 images.extend(part);
-                images.extend([1.0, 0.0, 0.0, 0.0]);
+                images.extend([b.opacity, 0.0, 0.0, 0.0]);
                 push(&mut batches, Pipeline::Image(key), scissor, index);
               } else {
                 waiting = Some(waiting.map_or(b.rect, |w| w.union(&b.rect)));
@@ -1179,6 +1193,7 @@ impl Painter {
           }
         },
         Content::Text { text, font_size, color, weight } => {
+          let color = &fade(*color);
           // Each weight has its own fonts (M14).
           let weighted = if *weight == dovetail_layout::FontWeight::REGULAR {
             self.fonts.clone()
