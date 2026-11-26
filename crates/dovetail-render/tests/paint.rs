@@ -527,3 +527,133 @@ fn a_scrollbar_is_thin_until_the_pointer_is_over_it() {
   assert!(close(Fixture::at(&p, 71, 70), track_colour), "the track");
   assert!(close(Fixture::at(&p, 60, 30), WHITE), "left of the bar");
 }
+
+/// M18: an offset moves a box and what is in it, leaving nothing behind,
+/// and the parent's clip still applies.
+#[test]
+#[ignore = "needs a GPU adapter"]
+fn an_offset_moves_a_box_and_its_children() {
+  let inner = Style {
+    width: Size::Fixed(10.0),
+    height: Size::Fixed(10.0),
+    background: Color::rgb(1.0, 0.0, 0.0),
+    ..Style::default()
+  };
+  let outer = |offset: (f32, f32)| Style {
+    width: Size::Fixed(30.0),
+    height: Size::Fixed(30.0),
+    padding: Edges::all(10.0),
+    background: Color::rgb(0.0, 0.0, 1.0),
+    offset,
+    ..Style::default()
+  };
+  let scene = |offset| {
+    let red: View = Element::new(ElementKind::Box)
+      .style(inner.clone())
+      .into();
+    let clipper = Style {
+      width: Size::Fixed(70.0),
+      height: Size::Fixed(70.0),
+      clip: true,
+      ..Style::default()
+    };
+    stack([Element::new(ElementKind::Box)
+      .style(clipper)
+      .children([placed(10.0, 10.0, outer(offset), [red])])
+      .into()])
+  };
+  let mut f = Fixture::new(scene((0.0, 0.0)));
+  assert!(close(Fixture::at(&f.pixels(), 25, 25), RED));
+
+  f.scene.set(scene((30.0, 40.0)));
+  let painted = f.paint();
+  let p = f.pixels();
+  assert!(
+    close(Fixture::at(&p, 55, 65), RED),
+    "the child moved with it"
+  );
+  assert!(close(Fixture::at(&p, 45, 55), BLUE), "the box moved");
+  assert!(
+    close(Fixture::at(&p, 25, 25), WHITE),
+    "nothing is left behind: {:?}",
+    Fixture::at(&p, 25, 25)
+  );
+  assert!(painted < 100 * 100, "a partial repaint: {painted} pixels");
+  // The box would reach 80 down, but its parent clips it at 70.
+  assert!(close(Fixture::at(&p, 45, 69), BLUE));
+  assert!(
+    close(Fixture::at(&p, 45, 72), WHITE),
+    "{:?}",
+    Fixture::at(&p, 45, 72)
+  );
+  let moved = f
+    .layout
+    .boxes()
+    .iter()
+    .find(|b| matches!(&b.content, dovetail_layout::Content::Element(e) if e.style.offset != (0.0, 0.0)))
+    .expect("the moved box");
+  assert_eq!((moved.rect.x, moved.rect.y), (40.0, 50.0));
+}
+
+/// M18: opacity fades a box, its border and the text in it, multiplied
+/// down the tree, and repaints when it changes.
+#[test]
+#[ignore = "needs a GPU adapter"]
+fn opacity_fades_a_box_and_everything_in_it() {
+  let scene = |outer: f32, inner: f32| {
+    let child: View = Element::new(ElementKind::Box)
+      .style(Style {
+        width: Size::Fixed(20.0),
+        height: Size::Fixed(20.0),
+        background: Color::BLACK,
+        opacity: inner,
+        ..Style::default()
+      })
+      .into();
+    stack([placed(
+      10.0,
+      10.0,
+      Style {
+        width: Size::Fixed(60.0),
+        height: Size::Fixed(60.0),
+        padding: Edges::all(20.0),
+        background: Color::rgb(1.0, 0.0, 0.0),
+        opacity: outer,
+        ..Style::default()
+      },
+      [child],
+    )])
+  };
+  let mut f = Fixture::new(scene(1.0, 1.0));
+  let p = f.pixels();
+  assert!(close(Fixture::at(&p, 15, 15), RED));
+  assert!(close(Fixture::at(&p, 40, 40), [0, 0, 0, 255]));
+
+  // Half see-through: red over white is pink, mixed in linear light.
+  f.scene.set(scene(0.5, 1.0));
+  f.paint();
+  let p = f.pixels();
+  let pink = Fixture::at(&p, 15, 15);
+  assert!(close(pink, [255, 188, 188, 255]), "{pink:?}");
+  // The child is half see-through too, over the half see-through red.
+  let child = Fixture::at(&p, 40, 40);
+  assert!(child[0] < pink[0] && child[0] > 50, "{child:?}");
+  assert!(child[1] < pink[1], "{child:?}");
+
+  // Opacity multiplies: 0.5 × 0 is clear, so only the parent shows.
+  f.scene.set(scene(0.5, 0.0));
+  f.paint();
+  let p = f.pixels();
+  assert!(
+    close(Fixture::at(&p, 40, 40), pink),
+    "{:?}",
+    Fixture::at(&p, 40, 40)
+  );
+
+  // At 0 nothing is drawn.
+  f.scene.set(scene(0.0, 1.0));
+  f.paint();
+  let p = f.pixels();
+  assert!(close(Fixture::at(&p, 15, 15), WHITE));
+  assert!(close(Fixture::at(&p, 40, 40), WHITE));
+}

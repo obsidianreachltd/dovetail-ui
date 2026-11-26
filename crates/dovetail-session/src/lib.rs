@@ -16,8 +16,8 @@ use std::time::{Duration, Instant};
 
 use dovetail_core::{
   AccessAction, Callback, CloseGuard, ComponentId, Element, ImeEvent, KeyEvent,
-  Modifiers, NamedKey, PointerButton, PointerEvent, PointerKind, Tree, View,
-  Viewport, WheelEvent, WindowStyle,
+  Modifiers, NamedKey, PointerButton, PointerEvent, PointerKind,
+  SystemSettings, Tree, View, Viewport, WheelEvent, WindowStyle,
 };
 use dovetail_layout::{BoxKey, Content, Layout, Measure, Rect, Scrollbar};
 
@@ -38,35 +38,47 @@ const BARS_SHOWN_FOR: Duration = Duration::from_millis(1000);
 /// How many times an update builds and lays out while what layout reports
 /// changes the tree (M16).
 const LAYOUT_PASSES: usize = 4;
-/// Presses closer together than this in time count as one double click.
-const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(500);
-/// Presses closer together than this, in logical pixels, count as one
-/// double click.
-const DOUBLE_CLICK_DISTANCE: f32 = 4.0;
 /// Space between an element and its focus ring, in logical pixels.
 const FOCUS_RING_GAP: f32 = 1.0;
 /// Width of the focus ring, in logical pixels.
 const FOCUS_RING_WIDTH: f32 = 2.0;
 
-/// What a session is told about the system, instead of asking it.
-#[derive(Clone, Copy, Debug)]
+/// What a session is told about the system, instead of asking it. The
+/// window gives it new settings with [`Session::set_settings`] when the
+/// system's change (M18).
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Settings {
   /// How long the caret stays on, and then off; `None` when it does not
   /// blink.
   pub caret_blink: Option<Duration>,
+  /// Presses closer together than this in time count as one double click.
+  pub double_click_time: Duration,
+  /// Presses closer together than this, in logical pixels across and
+  /// down, count as one double click.
+  pub double_click_distance: f32,
   /// Whether scroll bars show only while scrolling, as macOS can be set
-  /// to. Asked each time, since the user can change it while the program
-  /// runs.
-  pub overlay_scrollbars: fn() -> bool,
+  /// to.
+  pub overlay_scrollbars: bool,
+}
+
+impl From<SystemSettings> for Settings {
+  /// The system's settings that a session uses.
+  fn from(system: SystemSettings) -> Settings {
+    Settings {
+      caret_blink: system.caret_blink,
+      double_click_time: system.double_click_time,
+      double_click_distance: system.double_click_distance,
+      overlay_scrollbars: system.overlay_scrollbars,
+    }
+  }
 }
 
 impl Default for Settings {
-  /// A caret that blinks every 530 ms, and scroll bars that always show.
+  /// The default system settings: a caret that blinks every 530 ms, 500
+  /// ms and 4 pixels for a double click, and scroll bars that always
+  /// show.
   fn default() -> Self {
-    Self {
-      caret_blink: Some(Duration::from_millis(530)),
-      overlay_scrollbars: || false,
-    }
+    SystemSettings::default().into()
   }
 }
 
@@ -341,6 +353,39 @@ impl Session {
     self.blink_at.map(|_| self.caret_on)
   }
 
+  /// The settings the session follows now.
+  pub fn settings(&self) -> Settings {
+    self.settings
+  }
+
+  /// Gives the session new settings, when the system's change. A new
+  /// blink rate starts at once, and the caret stays on when blinking
+  /// stops. True when the window must be drawn again: the caret or the
+  /// scroll bars may look different.
+  pub fn set_settings(
+    &mut self,
+    settings: Settings,
+  ) -> bool {
+    if settings == self.settings {
+      return false;
+    }
+    let old = std::mem::replace(&mut self.settings, settings);
+    if old.caret_blink != settings.caret_blink {
+      self.caret_on = true;
+      self.blink_at = match settings.caret_blink {
+        Some(rate) if self.blink_at.is_some() => {
+          Some(dovetail_core::now() + rate)
+        },
+        _ => None,
+      };
+    }
+    if !settings.overlay_scrollbars {
+      self.bars_hide_at = None;
+    }
+    old.caret_blink != settings.caret_blink
+      || old.overlay_scrollbars != settings.overlay_scrollbars
+  }
+
   /// When the session next changes by itself: the caret blinks, or
   /// scrollbars hide.
   pub fn next_deadline(&self) -> Option<Instant> {
@@ -492,9 +537,9 @@ impl Session {
     let now = dovetail_core::now();
     let clicks = match self.last_click {
       Some((at, (px, py), n))
-        if now.duration_since(at) <= DOUBLE_CLICK_TIME
-          && (px - x).abs() <= DOUBLE_CLICK_DISTANCE
-          && (py - y).abs() <= DOUBLE_CLICK_DISTANCE =>
+        if now.duration_since(at) <= self.settings.double_click_time
+          && (px - x).abs() <= self.settings.double_click_distance
+          && (py - y).abs() <= self.settings.double_click_distance =>
       {
         n + 1
       },
@@ -633,7 +678,7 @@ impl Session {
 
   /// Shows scrollbars that show only while scrolling, for a second.
   fn show_bars(&mut self) {
-    if (self.settings.overlay_scrollbars)() {
+    if self.settings.overlay_scrollbars {
       self.bars_hide_at = Some(dovetail_core::now() + BARS_SHOWN_FOR);
     }
   }
@@ -641,7 +686,7 @@ impl Session {
   /// The scrollbars to paint now, each with whether it is wide, as under
   /// the pointer (M15).
   pub fn scrollbars(&self) -> Vec<(Scrollbar, bool)> {
-    let overlay = (self.settings.overlay_scrollbars)();
+    let overlay = self.settings.overlay_scrollbars;
     let shown = self.bars_hide_at.is_some()
       || self.bar_drag.is_some()
       || self.bar_hot.is_some();

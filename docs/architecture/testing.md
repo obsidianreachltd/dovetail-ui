@@ -38,7 +38,7 @@ fn increment_counts() {
 }
 ```
 
-`TestUi::new` builds the component and lays it out in 800 by 600 logical pixels. `TestUi::with` and `Options` choose the size, scale, title and text measuring. Every action lays out again before it returns, so a test can check what changed straight away.
+`TestUi::new` builds the component and lays it out in 800 by 600 logical pixels. `TestUi::with` and `Options` choose the size, scale, title, text measuring and the system's settings. A test changes the settings while it runs with `dovetail_core::set_system_settings`, and the window follows, as a real one does. Every action lays out again before it returns, so a test can check what changed straight away.
 
 ### Finding
 
@@ -73,11 +73,15 @@ ui.advance(Duration::from_millis(500));
 ui.find(role(Role::Tooltip));
 ```
 
-`advance` fires the timers that fall due, in order, with the clock at each timer's time. Tooltips, animation frames, double-clicks, the caret blink and hiding scroll bars all follow it. A test never needs to sleep for them.
+`advance` fires the timers that fall due, in order, with the clock at each timer's time. While a component asks for frames with `request_frame()`, it also gives a frame every `FRAME`, a 60th of a second of test time. Tooltips, animation frames, double-clicks, the caret blink and hiding scroll bars all follow it. A test never needs to sleep for them.
+
+An animated value from `use_animated` moves with these frames, so a test steps through an animation by moving the clock, frame by frame if it needs to. Each frame is built at its exact time, so an animation of 200 ms ends at the frame on or just after 200 ms. A test that checks what a change shows, not how it moves, can advance past the animation, or set less motion in `Options::settings` so that values jump.
 
 Work on other threads, such as decoding an image or saving a file, takes real time. `run_tasks()` waits for it, and `wait_until(what, condition)` waits for a condition. Both give up after 10 seconds with a message.
 
 Framework code on the UI thread must read the time with `dovetail_core::now()`, not `Instant::now()`. A test (`crates/dovetail-testing/tests/ui_clock.rs`) scans for it.
+
+A test that builds a `Tree` itself, with no `TestUi`, has no frames and a real clock, so animations do not finish in it. Such a test sets less motion with `set_system_settings`.
 
 ## Pictures
 

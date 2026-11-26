@@ -6,13 +6,37 @@ use winit::event_loop::ActiveEventLoop;
 
 use super::{Shell, WindowId};
 
-/// Reads the system's appearance again and gives it to themes, which
-/// change if it did.
+/// Reads the system's appearance and settings again (M14, M18). Themes,
+/// and the components that read a setting, change if they did.
 pub(super) fn refresh_appearance() {
   dovetail_core::set_system_appearance(crate::platform::appearance());
+  dovetail_core::set_system_settings(crate::platform::settings());
 }
 
 impl Shell {
+  /// Reads the system's appearance and settings again, and gives each
+  /// window's session the settings it follows (M18). A window whose caret
+  /// or scroll bars change is drawn again.
+  pub(super) fn refresh_system(&mut self) {
+    refresh_appearance();
+    self.pass_settings();
+  }
+
+  /// Gives every window's session the settings now, as the system or the
+  /// program set them, and draws again the windows they change. It costs
+  /// a comparison when nothing changed, so it runs before each wait.
+  pub(super) fn pass_settings(&mut self) {
+    let settings =
+      dovetail_session::Settings::from(dovetail_core::system_settings());
+    for entry in self.windows.values_mut() {
+      if let Some(ui) = entry.ui.as_mut()
+        && ui.session.set_settings(settings)
+      {
+        entry.window.request_redraw();
+      }
+    }
+  }
+
   /// The close guard of a window, if one of its elements has one.
   fn guard_of(
     &self,

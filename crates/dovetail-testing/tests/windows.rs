@@ -5,10 +5,11 @@
 //! --ignored`
 
 use std::process::ExitCode;
+use std::time::Duration;
 
 use dovetail::controls::Tooltip;
 use dovetail::prelude::*;
-use dovetail_core::{NamedKey, Role};
+use dovetail_core::{NamedKey, Role, now, request_frame};
 use dovetail_testing::windows::{TestWindows, run_window_tests};
 use dovetail_testing::{label, role, text};
 
@@ -47,6 +48,36 @@ fn Tipped() -> View {
       }
     }
   }
+}
+
+/// Moves for 300 ms after it starts, asking for a frame on each build
+/// until then (M18).
+#[component]
+fn Mover() -> View {
+  let start = use_state(now).get();
+  let elapsed = now() - start;
+  let done = elapsed >= Duration::from_millis(300);
+  if !done {
+    request_frame();
+  }
+  ui! {
+    Text { value: if done { "Done".to_string() } else { format!("{} ms", elapsed.as_millis()) } }
+  }
+}
+
+fn a_real_window_draws_frames_only_while_asked(t: &mut TestWindows) {
+  let w = t.open("Frames", (300.0, 200.0), ui! { Mover {} });
+  let before = t.stats(w).presented;
+  t.wait_until("the end of the movement", move |t| t.has(w, text("Done")));
+  let moving = t.stats(w).presented - before;
+  // About 18 frames at 60 a second; fewer on a slow machine, but more
+  // than the one or two a change would draw.
+  assert!(moving >= 5, "{moving} frames while moving");
+  // Nothing moves now, so nothing is drawn.
+  let after = t.stats(w).presented;
+  t.pause(Duration::from_millis(300));
+  assert_eq!(t.stats(w).presented, after, "no frames while still");
+  t.close(w);
 }
 
 fn a_click_in_a_real_window_changes_the_text(t: &mut TestWindows) {
@@ -109,6 +140,10 @@ fn main() -> ExitCode {
     (
       "a_tooltip_shows_after_a_real_wait",
       a_tooltip_shows_after_a_real_wait,
+    ),
+    (
+      "a_real_window_draws_frames_only_while_asked",
+      a_real_window_draws_frames_only_while_asked,
     ),
   ])
 }

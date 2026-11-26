@@ -23,15 +23,19 @@ mod data;
 mod scheme;
 
 pub use data::{
-  ButtonTheme, CheckTheme, DialogTheme, Extensions, MenuTheme, RowLook,
+  ButtonTheme, CheckTheme, DialogTheme, Extensions, MenuTheme, Motion, RowLook,
   RowTheme, Shapes, SliderTheme, Spacing, TabTheme, TextFieldTheme, TextStyle,
   TextTheme, ThemeData, ToggleTheme, TooltipTheme,
 };
+use std::cell::RefCell;
+use std::rc::Rc;
+
 pub use scheme::{Brightness, ColorScheme, DOVETAIL_SLATE, TEXT_CONTRAST};
 
 use dovetail::{
   Align, Children, Element, ElementKind, Signal, Size, Style, View,
-  WindowStyle, provide_context, system_appearance, use_context, use_state,
+  WindowStyle, provide_context, system_appearance, text_scale, use_animated,
+  use_context, use_state,
 };
 use dovetail_macros::component;
 
@@ -56,10 +60,20 @@ pub struct ThemeSignal(pub Signal<ThemeData>);
 /// The theme of the component that is building: the nearest [`Theme`]
 /// around it, or [`ThemeData::light`] when there is none. The component is
 /// built again when that theme changes.
+///
+/// With no [`Theme`], its text styles follow the system's text size, as
+/// the outermost `Theme`'s do.
 pub fn theme() -> ThemeData {
   match use_context::<ThemeSignal>() {
     Some(ThemeSignal(signal)) => signal.get(),
-    None => ThemeData::light(),
+    None => {
+      let mut light = ThemeData::light();
+      let scale = text_scale();
+      if scale != 1.0 {
+        light.text = light.text.scaled(scale);
+      }
+      light
+    },
   }
 }
 
@@ -114,6 +128,13 @@ pub fn window_style(theme: &ThemeData) -> WindowStyle {
 /// - The outermost `Theme` also fills the space it is given with the
 ///   theme's background, gives its body text style and colour to the text
 ///   inside, and tells the window its colours and whether it is dark.
+/// - The outermost `Theme` multiplies its text styles by the system's text
+///   size, [`text_scale`](dovetail::text_scale) (M18), so the text of
+///   every control grows with it. Like high contrast, it is applied once:
+///   a nested theme built from [`theme()`] has it already. A size an
+///   application gives text itself is not scaled.
+/// - The outermost `Theme` fades its colours from one theme to the next,
+///   over the theme's medium [`Motion`] time, unless less motion is set.
 #[component]
 pub fn Theme(
   data: ThemeData,
@@ -125,7 +146,15 @@ pub fn Theme(
   // one provides its own.
   let outermost = use_state(|| use_context::<ThemeSignal>().is_none()).get();
   let chosen = if outermost {
-    choose(&data, dark.as_ref(), mode)
+    let mut chosen = choose(&data, dark.as_ref(), mode);
+    let scale = text_scale();
+    if scale != 1.0 {
+      chosen.text = chosen.text.scaled(scale);
+    }
+    // The colours fade from one theme to the next (M18).
+    let transition = chosen.motion.medium();
+    chosen.colors = use_animated(chosen.colors, transition);
+    chosen
   } else {
     // A nested theme is built from the one around it, which already
     // follows the system's high contrast: it is not applied twice.
@@ -140,7 +169,12 @@ pub fn Theme(
     }
   };
   let signal = use_state(|| chosen.clone());
-  if signal.map(|s| *s != chosen) {
+  // The theme last given, kept apart from the signal so that this
+  // component does not read it: while the colours fade, each build gives a
+  // new theme, which must build the readers again but not this.
+  let given = use_state(|| Rc::new(RefCell::new(chosen.clone()))).get();
+  if *given.borrow() != chosen {
+    *given.borrow_mut() = chosen.clone();
     signal.set(chosen.clone());
   }
   provide_context(ThemeSignal(signal));

@@ -374,10 +374,8 @@ impl Shell {
       self.proxy.clone(),
     );
     entry.window.set_visible(true);
-    let settings = Settings {
-      caret_blink: blink_rate(),
-      overlay_scrollbars: crate::platform::overlay_scrollbars,
-    };
+    // The system's settings, read with its appearance (M18).
+    let settings = Settings::from(dovetail_core::system_settings());
     let mut session =
       Session::new(title, root, context, settings, Box::new(font_measure()));
     session.set_active(entry.window.has_focus());
@@ -939,14 +937,6 @@ fn log_input(event: &WindowEvent) {
   }
 }
 
-/// How long the caret stays on, and then off, read from the system once.
-fn blink_rate() -> Option<Duration> {
-  thread_local! {
-    static RATE: Option<Duration> = crate::platform::caret_blink_time();
-  }
-  RATE.with(|r| *r)
-}
-
 impl WindowEntry {
   fn info(&self) -> WindowInfo {
     WindowInfo {
@@ -969,6 +959,8 @@ struct Shell {
   modifiers: Modifiers,
   /// When to call [`Application::woke`], if set.
   wake_at: Cell<Option<Instant>>,
+  /// The soonest the next frame for animation may start (M18).
+  frame_at: Option<Instant>,
   /// Sends events to the event loop, for AccessKit.
   proxy: EventLoopProxy<UserEvent>,
   /// The window in front, which owns file dialogs on Windows (M11).
@@ -986,6 +978,22 @@ struct Shell {
 }
 
 impl Shell {
+  /// The least time between two frames for animation: three quarters of
+  /// the display's frame, so a frame is ready when the display wants it.
+  /// Showing a frame waits for the display, which keeps the pace. 60
+  /// frames a second when the display does not say.
+  fn frame_gap(&self) -> Duration {
+    let millihertz = self
+      .primary
+      .and_then(|id| self.windows.get(&id))
+      .or_else(|| self.windows.values().next())
+      .and_then(|entry| entry.window.current_monitor())
+      .and_then(|monitor| monitor.refresh_rate_millihertz())
+      .filter(|mhz| *mhz >= 1000)
+      .unwrap_or(60_000);
+    Duration::from_secs_f64(0.75 * 1000.0 / f64::from(millihertz))
+  }
+
   fn open_window(
     &mut self,
     event_loop: &ActiveEventLoop,
@@ -1484,6 +1492,22 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
     for window in self.shell.guarded_to_close() {
       Self::context(&mut self.shell, event_loop).close_window(window);
     }
+    // Settings the program set itself, as a self-test does (M18).
+    self.shell.pass_settings();
+    // Frames for animation (M18, D0028): while a component asks for one,
+    // start a frame, but no sooner than the display could show the last.
+    // Showing it waits for the display, so frames follow its rate.
+    let mut frame_at = None;
+    if dovetail_core::frame_requested() {
+      let now = dovetail_core::now();
+      match self.shell.frame_at {
+        Some(at) if at > now => frame_at = Some(at),
+        _ => {
+          dovetail_core::start_frame();
+          self.shell.frame_at = Some(now + self.shell.frame_gap());
+        },
+      }
+    }
     // State changed while handling events: show it.
     if self.shell.state_changed.replace(false) {
       self.shell.redraw_ui_windows();
@@ -1498,6 +1522,7 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
       .chain(self.shell.wake_at.get())
       // Timers from Task::after, such as a tooltip's wait (D0027).
       .chain(dovetail_core::next_timer())
+      .chain(frame_at)
       .min();
     event_loop.set_control_flow(match next {
       Some(at) => ControlFlow::WaitUntil(at),
@@ -1629,14 +1654,14 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
           meta: state.super_key(),
         };
       },
-      WindowEvent::ThemeChanged(_) => lifecycle::refresh_appearance(),
+      WindowEvent::ThemeChanged(_) => self.shell.refresh_system(),
       WindowEvent::Focused(active) => {
         if let Some(entry) = self.shell.windows.get_mut(&id) {
           entry.stats.focused = Some(active);
         }
         // Settings may have changed while another window was in front.
         if active {
-          lifecycle::refresh_appearance();
+          self.shell.refresh_system();
         }
         if active && let Some(entry) = self.shell.windows.get(&id) {
           self
@@ -1835,6 +1860,7 @@ fn start(
     primary: None,
     modifiers: Modifiers::default(),
     wake_at: Cell::new(None),
+    frame_at: None,
     proxy: event_loop.create_proxy(),
     dev: DevState::from_env(),
     drag: None,

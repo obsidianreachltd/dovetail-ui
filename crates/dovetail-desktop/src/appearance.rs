@@ -43,7 +43,7 @@ pub(crate) fn parse(
   }
 }
 
-fn gsettings(
+pub(crate) fn gsettings(
   schema: &str,
   key: &str,
 ) -> Option<String> {

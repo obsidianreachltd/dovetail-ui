@@ -7,8 +7,8 @@ extern crate dovetail_core as dovetail;
 use std::cell::RefCell;
 
 use dovetail::{
-  Color, ComponentId, Signal, SystemAppearance, Tree, View,
-  set_system_appearance, use_context, use_state,
+  Color, ComponentId, Signal, SystemAppearance, SystemSettings, Tree, View,
+  set_system_appearance, set_system_settings, use_context, use_state,
 };
 use dovetail_macros::{component, ui};
 use dovetail_theme::{Brightness, Theme, ThemeData, ThemeMode, theme};
@@ -18,6 +18,15 @@ thread_local! {
   static SEEN: RefCell<Vec<(&'static str, Color)>> = const { RefCell::new(Vec::new()) };
   /// The signals the test changes, made by the root.
   static KNOBS: RefCell<Option<(Signal<ThemeData>, Signal<Color>)>> = const { RefCell::new(None) };
+}
+
+/// These tests check which theme is chosen, not how it fades in, so the
+/// colours change at once (M18).
+fn no_motion() {
+  set_system_settings(SystemSettings {
+    reduce_motion: true,
+    ..SystemSettings::default()
+  });
 }
 
 fn seen() -> Vec<(&'static str, Color)> {
@@ -67,6 +76,7 @@ fn knobs() -> (Signal<ThemeData>, Signal<Color>) {
 
 #[test]
 fn readers_see_the_nearest_theme_and_follow_changes() {
+  no_motion();
   set_system_appearance(SystemAppearance::default());
   let mut tree = Tree::new();
   tree.mount(ui! { Root { mode: ThemeMode::Light } });
@@ -101,6 +111,7 @@ fn without_a_theme_controls_use_the_light_theme() {
 
 #[test]
 fn the_system_mode_follows_dark_and_high_contrast() {
+  no_motion();
   set_system_appearance(SystemAppearance::default());
   let mut tree = Tree::new();
   tree.mount(ui! { Root {} });

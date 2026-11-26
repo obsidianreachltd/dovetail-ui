@@ -838,3 +838,63 @@ pub fn appearance() -> dovetail_core::SystemAppearance {
     dovetail_core::SystemAppearance { dark, accent, high_contrast }
   }
 }
+
+/// Less motion, the caret blink, the double-click time and the scroll bar
+/// style, as set in macOS (M18). macOS has no text scale for applications.
+pub fn settings() -> dovetail_core::SystemSettings {
+  let overlay = overlay_scrollbars();
+  let _pool = Pool::new();
+  let key = ns_string("NSTextInsertionPointBlinkPeriodOn");
+  // SAFETY: each objc_msgSend cast matches its method's signature:
+  // `sharedWorkspace` and `standardUserDefaults` take nothing and return
+  // objects (or nil); `accessibilityDisplayShouldReduceMotion` returns a
+  // BOOL; `+[NSEvent doubleClickInterval]` returns an NSTimeInterval
+  // (f64); `integerForKey:` takes one object and returns an NSInteger
+  // (isize), 0 when the key is not set. Missing classes give nil, which
+  // is checked. `key` was made by `ns_string`, is owned here and released
+  // once.
+  unsafe {
+    let send: unsafe extern "C" fn(Id, Sel) -> Id =
+      std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+    let send_bool: unsafe extern "C" fn(Id, Sel) -> i8 =
+      std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+    let send_f64: unsafe extern "C" fn(Id, Sel) -> f64 =
+      std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+    let send_int: unsafe extern "C" fn(Id, Sel, Id) -> isize =
+      std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+    let release: unsafe extern "C" fn(Id, Sel) =
+      std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+
+    let workspace_class = class(c"NSWorkspace");
+    let workspace = if workspace_class.is_null() {
+      std::ptr::null_mut()
+    } else {
+      send(workspace_class, sel(c"sharedWorkspace"))
+    };
+    let reduce_motion = !workspace.is_null()
+      && send_bool(workspace, sel(c"accessibilityDisplayShouldReduceMotion"))
+        != 0;
+
+    let event_class = class(c"NSEvent");
+    let double_click_seconds = if event_class.is_null() {
+      f64::NAN
+    } else {
+      send_f64(event_class, sel(c"doubleClickInterval"))
+    };
+
+    let defaults = send(class(c"NSUserDefaults"), sel(c"standardUserDefaults"));
+    let blink_on = if defaults.is_null() {
+      0
+    } else {
+      send_int(defaults, sel(c"integerForKey:"), key)
+    };
+    release(key, sel(c"release"));
+
+    crate::system_settings::from_macos(&crate::system_settings::MacValues {
+      reduce_motion,
+      double_click_seconds,
+      blink_on_ms: (blink_on > 0).then_some(blink_on as i64),
+      overlay_scrollbars: overlay,
+    })
+  }
+}

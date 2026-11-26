@@ -36,7 +36,7 @@ use std::time::{Duration, Instant};
 
 use dovetail_core::{
   BuildContext, Component, DragEnd, KeyCode, KeyEvent, Modifiers, NamedKey,
-  PointerButton, TestClock, View,
+  PointerButton, SystemSettings, TestClock, View,
 };
 use dovetail_layout::{FixedPitch, Layout, Measure};
 use dovetail_session::{AccessTree, Drag, Request, Session, Settings};
@@ -68,8 +68,11 @@ pub struct Options {
   /// same layout on every system; use the system's fonts to test what
   /// people see.
   pub measure: Box<dyn Measure>,
-  /// The caret blink and scroll bars.
-  pub settings: Settings,
+  /// The system's settings the test starts with: less motion, the text
+  /// scale, the caret blink, double-clicks and scroll bars (M18). A test
+  /// changes them with [`dovetail_core::set_system_settings`], and the
+  /// window follows at its next update, as a real one does.
+  pub settings: SystemSettings,
 }
 
 impl Default for Options {
@@ -80,7 +83,7 @@ impl Default for Options {
       scale: 1.0,
       title: "test".into(),
       measure: Box::new(FixedPitch::default()),
-      settings: Settings::default(),
+      settings: SystemSettings::default(),
     }
   }
 }
@@ -126,7 +129,14 @@ pub struct TestUi {
   drag: Option<Drag<()>>,
   /// How the last drag ended.
   drag_end: Option<DragEnd>,
+  /// When the last frame for animation started, or when a component
+  /// first asked for one; `None` while none is asked for.
+  last_frame: Option<Instant>,
 }
+
+/// How long a frame lasts in [`TestUi::advance`]: 60 frames a second of
+/// the test's time.
+pub const FRAME: Duration = Duration::from_nanos(16_666_667);
 
 impl TestUi {
   /// Runs `root` in a window 800 by 600 logical pixels, and lays it out.
@@ -136,19 +146,21 @@ impl TestUi {
 
   /// Runs `root` as `options` say, and lays it out.
   ///
-  /// This installs, for the test's thread, a clipboard in memory and a
-  /// clock that stands still until [`TestUi::advance`] moves it.
+  /// This installs, for the test's thread, a clipboard in memory, a clock
+  /// that stands still until [`TestUi::advance`] moves it, and
+  /// `options.settings` as the system's settings.
   pub fn with(
     root: View,
     options: Options,
   ) -> Self {
     dovetail_core::set_clipboard(None);
     let clock = TestClock::install();
+    dovetail_core::set_system_settings(options.settings);
     let session = Session::new(
       options.title,
       View::component::<Show>(ShowProps { view: root }),
       None,
-      options.settings,
+      Settings::from(dovetail_core::system_settings()),
       options.measure,
     );
     let mut ui = Self {
@@ -160,6 +172,7 @@ impl TestUi {
       painting: pictures::Cache::default(),
       drag: None,
       drag_end: None,
+      last_frame: None,
     };
     ui.update();
     ui
@@ -169,6 +182,11 @@ impl TestUi {
   /// before it returns, so tests call it only after changing state
   /// themselves.
   pub fn update(&mut self) {
+    // The window follows the system's settings, as a real one does when
+    // they change.
+    self
+      .session
+      .set_settings(Settings::from(dovetail_core::system_settings()));
     // What layout reports can change the tree again; a few rounds settle
     // it, as a window does over a few frames.
     for _ in 0..3 {
@@ -176,6 +194,14 @@ impl TestUi {
       if !self.session.needs_update() {
         break;
       }
+    }
+    // Frames for animation are counted from the last, or from when a
+    // component first asked.
+    let now = dovetail_core::now();
+    if !dovetail_core::frame_requested() {
+      self.last_frame = None;
+    } else if self.last_frame.is_none_or(|at| at + FRAME < now) {
+      self.last_frame = Some(now);
     }
   }
 
@@ -588,14 +614,51 @@ impl TestUi {
     dovetail_core::now()
   }
 
-  /// Moves the clock forward by `time`. Timers that fall due on the way
-  /// fire in order, as a tooltip's wait or an animation's frames, then the
-  /// window lays out again.
+  /// Moves the clock forward by `time`. On the way, in order:
+  ///
+  /// - timers fire as they fall due, as a tooltip's wait;
+  /// - while a component asks for frames, a frame every [`FRAME`] builds
+  ///   it again, as a window at 60 frames a second does;
+  /// - the window's own changes happen: the caret blinks, and overlay
+  ///   scroll bars hide.
+  ///
+  /// Then the window lays out again.
   pub fn advance(
     &mut self,
     time: Duration,
   ) {
-    self.clock.advance(time);
+    let target = dovetail_core::now() + time;
+    // Each frame and deadline on the way, in order. Each sets the next one
+    // later, so this ends; the limit is a guard.
+    for _ in 0..1_000_000 {
+      let now = dovetail_core::now();
+      let frame = dovetail_core::frame_requested()
+        .then(|| self.last_frame.unwrap_or(now) + FRAME);
+      let deadline = self.session.next_deadline();
+      let Some(at) = frame
+        .into_iter()
+        .chain(deadline)
+        .min()
+        .filter(|at| *at <= target)
+      else {
+        break;
+      };
+      self
+        .clock
+        .advance(at.saturating_duration_since(now));
+      let now = dovetail_core::now();
+      if frame == Some(at) {
+        self.last_frame = Some(now);
+        dovetail_core::start_frame();
+      }
+      if deadline.is_some_and(|d| d <= now) {
+        self.session.tick(now);
+      }
+      self.update();
+    }
+    self
+      .clock
+      .advance(target.saturating_duration_since(dovetail_core::now()));
     self.update();
   }
 
@@ -660,7 +723,9 @@ impl TestUi {
 
 impl Drop for TestUi {
   fn drop(&mut self) {
-    // The next test on this thread starts with the real time.
+    // The next test on this thread starts with the real time, and the
+    // usual settings.
     dovetail_core::set_clock(None);
+    dovetail_core::set_system_settings(SystemSettings::default());
   }
 }

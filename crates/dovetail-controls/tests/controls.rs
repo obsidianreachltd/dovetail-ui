@@ -4,6 +4,8 @@
 
 extern crate dovetail_core as dovetail;
 
+use std::time::Duration;
+
 use dovetail::{Color, Role, Signal, View, use_state};
 use dovetail_controls::{Button, Column, Text, Toggle};
 use dovetail_layout::{Content, LayoutBox};
@@ -98,6 +100,8 @@ fn toggle_reports_the_new_value_and_shows_it() {
   ui.click_at((r.x + 5.0, r.y + 5.0));
   assert_eq!(ui.find(lights.clone()).is_on(), Some(true));
   ui.find(text("on"));
+  // The colour fades (M18).
+  ui.advance(Duration::from_millis(500));
   assert_ne!(colour(&ui), off_colour, "the track changes colour");
   // The label is part of the toggle, so clicking anywhere on it toggles.
   ui.click(lights.clone());
@@ -111,6 +115,8 @@ fn toggle_knob_moves_to_the_end_when_on() {
   let knob_x = |ui: &TestUi| find_box(ui, |b| b.rect.width == 16.0).rect.x;
   let off = knob_x(&ui);
   ui.click(role(Role::Switch).label("Lights"));
+  // The knob slides (M18).
+  ui.advance(Duration::from_millis(500));
   assert_eq!(
     knob_x(&ui) - off,
     16.0,

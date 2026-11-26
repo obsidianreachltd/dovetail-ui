@@ -26,6 +26,8 @@ unsafe extern "system" {
     memory: Handle,
   ) -> Handle;
   fn GetCaretBlinkTime() -> u32;
+  fn GetDoubleClickTime() -> u32;
+  fn GetSystemMetrics(index: i32) -> i32;
 }
 
 #[link(name = "kernel32")]
@@ -146,19 +148,6 @@ impl Clipboard for WindowsClipboard {
       }
     }
     true
-  }
-}
-
-/// How long the caret stays on, and then off, as set in Windows; `None`
-/// when the user turned blinking off.
-pub fn caret_blink_time() -> Option<std::time::Duration> {
-  // SAFETY: GetCaretBlinkTime takes nothing and returns milliseconds, or
-  // INFINITE (u32::MAX) when the caret does not blink, or 0 on failure.
-  let ms = unsafe { GetCaretBlinkTime() };
-  match ms {
-    u32::MAX => None,
-    0 => Some(std::time::Duration::from_millis(530)),
-    ms => Some(std::time::Duration::from_millis(u64::from(ms))),
   }
 }
 
@@ -340,6 +329,11 @@ impl dovetail_core::FileDialogs for WindowsFileDialogs {
 const HKEY_CURRENT_USER: isize = 0x8000_0001_u32 as i32 as isize;
 /// `RRF_RT_REG_DWORD`: only a 32-bit value.
 const RRF_RT_REG_DWORD: u32 = 0x0000_0010;
+/// `SPI_GETCLIENTAREAANIMATION`.
+const SPI_GETCLIENTAREAANIMATION: u32 = 0x1042;
+/// `SM_CXDOUBLECLK` and `SM_CYDOUBLECLK`.
+const SM_CXDOUBLECLK: i32 = 36;
+const SM_CYDOUBLECLK: i32 = 37;
 /// `SPI_GETHIGHCONTRAST`.
 const SPI_GETHIGHCONTRAST: u32 = 0x0042;
 /// `HCF_HIGHCONTRASTON`.
@@ -436,4 +430,39 @@ pub fn appearance() -> dovetail_core::SystemAppearance {
     accent,
     high_contrast: read && contrast.flags & HCF_HIGHCONTRASTON != 0,
   }
+}
+
+/// Less motion, the text scale, the caret blink and double-clicks, as set
+/// in Windows (M18).
+pub fn settings() -> dovetail_core::SystemSettings {
+  let mut animation: i32 = 0;
+  // SAFETY: SPI_GETCLIENTAREAANIMATION writes a BOOL (i32) to the
+  // pointer it is given, which is `animation`, alive through the call.
+  let read = unsafe {
+    SystemParametersInfoW(
+      SPI_GETCLIENTAREAANIMATION,
+      0,
+      (&mut animation as *mut i32).cast(),
+      0,
+    )
+  } != 0;
+  // SAFETY: these take nothing, or a metric's index, and return a number.
+  let (caret_blink_ms, double_click_ms, width, height) = unsafe {
+    (
+      GetCaretBlinkTime(),
+      GetDoubleClickTime(),
+      GetSystemMetrics(SM_CXDOUBLECLK),
+      GetSystemMetrics(SM_CYDOUBLECLK),
+    )
+  };
+  crate::system_settings::from_windows(&crate::system_settings::WindowsValues {
+    animation: read.then_some(animation != 0),
+    text_scale_percent: user_dword(
+      r"Software\Microsoft\Accessibility",
+      "TextScaleFactor",
+    ),
+    caret_blink_ms,
+    double_click_ms,
+    double_click_rect: (width, height),
+  })
 }

@@ -3,6 +3,7 @@
 use dovetail::{
   Align, Border, Callback, Color, Element, ElementKind, FocusTarget, Justify,
   KeyCode, KeyHandler, NamedKey, Role, Size, Style, View, current_component,
+  use_animated,
 };
 use dovetail_macros::component;
 use dovetail_theme::{ThemeData, theme};
@@ -50,6 +51,10 @@ fn label_ink(
 /// With `mixed`, it shows a dash: what it stands for is partly on, as a
 /// "select all" box over a list that is partly chosen. Clicking a mixed box
 /// turns it on.
+///
+/// The fill and the tick fade in and out over the theme's short
+/// [`Motion`](dovetail_theme::Motion) time, unless less motion is set
+/// (M18).
 #[component]
 pub fn CheckBox(
   checked: bool,
@@ -62,11 +67,13 @@ pub fn CheckBox(
   let (on_fill, mark_ink, border) = t.check_look();
   let (off_fill, off_ink) = t.disabled_look();
   let filled = checked || mixed;
-  let fill = match (enabled, filled) {
-    (true, true) => on_fill,
-    (false, true) => off_ink,
-    (_, false) => Color::TRANSPARENT,
-  };
+  let solid = if enabled { on_fill } else { off_ink };
+  let transition = t.motion.short();
+  // How far in the fill and the tick are, from 0 to 1.
+  let shown = use_animated(if filled { 1.0f32 } else { 0.0 }, transition);
+  let tick =
+    use_animated(if checked && !mixed { 1.0f32 } else { 0.0 }, transition);
+  let fill = Color { a: solid.a * shown, ..solid };
   let mark: View = if mixed {
     Element::new(ElementKind::Box)
       .style(Style {
@@ -76,10 +83,12 @@ pub fn CheckBox(
         ..Style::default()
       })
       .into()
-  } else if checked {
+  } else if checked || tick > 0.0 {
+    // Shown while it fades out, too.
     Element::new(ElementKind::Box)
       .style(Style {
         text_color: Some(if enabled { mark_ink } else { off_fill }),
+        opacity: tick,
         ..Style::default()
       })
       .children([dovetail_image::icons::check()
@@ -96,9 +105,13 @@ pub fn CheckBox(
       height: Size::Fixed(MARK),
       radius: 3.0,
       background: fill,
+      // The border fades as the fill comes in.
       border: Border {
-        width: if filled { 0.0 } else { 1.5 },
-        color: if enabled { border } else { off_ink },
+        width: 1.5,
+        color: Color {
+          a: (if enabled { border } else { off_ink }).a * (1.0 - shown),
+          ..if enabled { border } else { off_ink }
+        },
       },
       align: Align::Center,
       justify: Justify::Center,

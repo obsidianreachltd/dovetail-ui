@@ -478,6 +478,9 @@ impl Tree {
     let instance = self.instances.get_mut(&id).expect("instance");
     let view = instance.view.clone();
     let mut hooks = std::mem::take(&mut instance.hooks);
+    // A frame asked for before is answered by this build; the build asks
+    // again if it still moves.
+    crate::frame::forget(id);
     let output = with_frame(id, &mut hooks, || {
       reactive::building(id, || {
         let mut cx = BuildContext { id, _build: PhantomData };
@@ -542,6 +545,7 @@ impl Tree {
       self.remove(*child, update);
     }
     reactive::dispose(id);
+    crate::frame::forget(id);
     CONTEXT.with_borrow_mut(|nodes| nodes.remove(&id));
     update.removed.push(id);
     // The instance, with its properties and handlers, drops here, after its

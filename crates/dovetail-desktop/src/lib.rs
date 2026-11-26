@@ -35,6 +35,7 @@ mod dialogs;
 mod geometry;
 mod platform;
 mod settings;
+mod system_settings;
 
 pub use app::{
   Application, Context, Error, Frame, Pumped, WindowId, WindowOptions,

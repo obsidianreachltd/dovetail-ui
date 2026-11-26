@@ -333,8 +333,13 @@ struct Loader {
 ///
 /// An animated GIF or APNG plays at its frames' delays, as many times as
 /// it says, while `playing` is true; set it to false to stop on the frame
-/// shown, as a pause button or the system's request for less motion
-/// would.
+/// shown, as a pause button would.
+///
+/// With less motion set on the system ([`reduce_motion`]), an animation
+/// shows its first frame and does not play (M18). Set `always_play` for
+/// one that is the point of the screen, such as a preview of the file.
+///
+/// [`reduce_motion`]: dovetail::reduce_motion
 ///
 /// `label` names the picture for assistive tools; an empty label marks it
 /// as decoration. `density` is image pixels for each logical pixel: 2 for
@@ -349,6 +354,7 @@ pub fn Image(
   #[prop(default)] fit: Fit,
   #[prop(default = 1.0)] density: f32,
   #[prop(default = true)] playing: bool,
+  #[prop(default)] always_play: bool,
   #[prop(default = Callback::new(|_: ImageState| {}))] on_state: Callback<
     ImageState,
   >,
@@ -404,9 +410,20 @@ pub fn Image(
     }
   }
 
+  // Less motion stills animations, on their first frame, unless the
+  // application asks for this one to play anyway.
+  let stilled = !always_play && dovetail::reduce_motion();
+  let playing = playing && !stilled;
+
   // Play an animation: a timer for the frame shown.
   let shown = animation.get();
-  let at = frame.get();
+  let mut at = frame.get();
+  if stilled && at != 0 {
+    // It starts again from the beginning if motion comes back.
+    at = 0;
+    frame.set(0);
+    loader.borrow_mut().played = 0;
+  }
   match &shown {
     Some(a) if a.is_animated() && playing => {
       let mut l = loader.borrow_mut();

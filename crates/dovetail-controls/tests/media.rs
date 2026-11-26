@@ -287,3 +287,50 @@ fn an_animation_stops_when_paused_and_plays_on() {
   w.update();
   assert_eq!(play(&mut w, 3), [G, B, R, G], "plays on");
 }
+
+/// M18: with less motion set, an animation shows its first frame and does
+/// not play, and plays again from the start when motion comes back.
+#[test]
+fn with_less_motion_an_animation_stays_on_its_first_frame() {
+  use dovetail::{SystemSettings, set_system_settings};
+  let less = SystemSettings {
+    reduce_motion: true,
+    ..SystemSettings::default()
+  };
+  let mut w = open_shared(three_colours(None));
+  assert_eq!(play(&mut w, 1), [R, G]);
+  set_system_settings(less);
+  w.update();
+  assert_eq!(colour(&w), Some(R), "back to the first frame");
+  w.advance(Duration::from_secs(5));
+  assert_eq!(colour(&w), Some(R), "and still");
+
+  set_system_settings(SystemSettings::default());
+  w.update();
+  assert_eq!(play(&mut w, 3), [R, G, B, R], "plays from the start");
+}
+
+#[component]
+fn Preview(bytes: Arc<[u8]>) -> View {
+  ui! {
+    Image { source: ImageSource::Bytes(bytes.clone()), label: "One", always_play: true }
+  }
+}
+
+#[test]
+fn an_image_that_must_play_plays_with_less_motion() {
+  use dovetail::{SystemSettings, set_system_settings};
+  let mut w = TestUi::with(
+    ui! { Preview { bytes: three_colours(None) } },
+    Options {
+      settings: SystemSettings {
+        reduce_motion: true,
+        ..SystemSettings::default()
+      },
+      ..Options::default()
+    },
+  );
+  w.wait_until("the first frame", |ui| colour(ui).is_some());
+  assert_eq!(play(&mut w, 3), [R, G, B, R]);
+  set_system_settings(SystemSettings::default());
+}

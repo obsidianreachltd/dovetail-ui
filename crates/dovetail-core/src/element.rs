@@ -229,6 +229,18 @@ pub struct Style {
   pub text_color: Option<Color>,
   /// Weight of text inside (M14). Children inherit it.
   pub font_weight: Option<FontWeight>,
+  /// Moves the element and everything in it this far from where layout
+  /// puts it, in logical pixels, right and down, without moving anything
+  /// else, as a CSS translate does (M18). Clicks, the focus ring and
+  /// assistive tools follow it. The parent's clip still applies.
+  pub offset: (f32, f32),
+  /// How solid the element and everything in it are, from 0 (clear) to 1
+  /// (solid, the default) (M18). It multiplies with the parents'.
+  ///
+  /// Each thing inside is drawn at this opacity on its own, so where
+  /// children overlap they show through each other. Canvases are not
+  /// faded. An element at 0 is still laid out and can still be clicked.
+  pub opacity: f32,
 }
 
 /// How heavy text is drawn, from 100 (thin) to 900 (black), as in CSS and
@@ -280,6 +292,8 @@ impl Default for Style {
       font_size: None,
       text_color: None,
       font_weight: None,
+      offset: (0.0, 0.0),
+      opacity: 1.0,
     }
   }
 }
@@ -306,6 +320,10 @@ impl Style {
       || self.font_size != other.font_size
       || self.font_weight != other.font_weight
       || self.layer != other.layer
+      // These move or fade boxes, which layout works out, reusing the
+      // sizes it has.
+      || self.offset != other.offset
+      || self.opacity != other.opacity
   }
 }
 

@@ -51,8 +51,8 @@ pub mod prelude {
     Button, Column, Row, Stack, Text, TextField, Toggle,
   };
   pub use dovetail_core::{
-    BuildContext, Callback, Children, Color, Component, ComponentId, Key,
-    Signal, Tree, View, use_state,
+    BuildContext, Callback, Children, Color, Component, ComponentId, Curve,
+    Key, Signal, Transition, Tree, View, use_animated, use_state,
   };
   pub use dovetail_macros::{component, ui};
 }

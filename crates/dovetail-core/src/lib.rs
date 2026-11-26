@@ -19,6 +19,7 @@
 
 #[doc(hidden)]
 pub mod __private;
+mod animate;
 mod appearance;
 mod clipboard;
 mod clock;
@@ -26,15 +27,18 @@ mod dialogs;
 mod drag;
 mod element;
 mod focus;
+mod frame;
 mod input;
 mod menu;
 mod picture;
 mod reactive;
+mod settings;
 mod task;
 mod tree;
 mod view;
 mod window;
 
+pub use animate::{Animate, Curve, Transition, use_animated};
 pub use appearance::{
   SystemAppearance, set_system_appearance, system_appearance,
 };
@@ -56,6 +60,7 @@ pub use element::{
   TextCursor, ValueRange, Viewport, WindowStyle,
 };
 pub use focus::{FocusTarget, focus_done, pending_focus};
+pub use frame::{frame_requested, request_frame, start_frame};
 pub use input::{
   AccessAction, ImeEvent, KeyCode, KeyEvent, KeyHandler, Modifiers, NamedKey,
   PointerButton, PointerEvent, PointerHandler, PointerKind, WheelEvent,
@@ -68,6 +73,11 @@ pub use picture::{Fit, ICON_SCALE, Picture, PictureKind, fit_rect};
 pub use reactive::{
   ComponentId, RuntimeStats, Signal, StateError, create_signal, runtime_stats,
   set_on_change,
+};
+pub use settings::{
+  MAX_TEXT_SCALE, MIN_TEXT_SCALE, SystemSettings, caret_blink,
+  double_click_distance, double_click_time, overlay_scrollbars, reduce_motion,
+  set_system_settings, system_settings, text_scale,
 };
 pub use task::{
   Progress, Task, TaskContext, TaskEnd, next_timer, run_task_messages,

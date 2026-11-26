@@ -10,9 +10,10 @@
 // The macros refer to the core as `::dovetail`.
 extern crate dovetail_core as dovetail;
 
+use dovetail::Animate;
 use dovetail::{
-  Align, Callback, Children, Color, Edges, Element, ElementKind, Justify, Role,
-  Size, Style, View,
+  Align, Callback, Children, Color, Edges, Element, ElementKind, Role, Size,
+  Style, View, use_animated,
 };
 use dovetail_macros::component;
 use dovetail_theme::theme;
@@ -155,19 +156,31 @@ pub fn Button(
 
 /// A switch that is on or off. Clicking it calls `on_change` with the new
 /// value; the component that owns the value updates `on`.
+///
+/// The knob slides and the track's colour fades over the theme's short
+/// [`Motion`](dovetail_theme::Motion) time, unless less motion is set
+/// (M18).
 #[component]
 pub fn Toggle(
   on: bool,
   #[prop(default = Callback::new(|_: bool| {}))] on_change: Callback<bool>,
   #[prop(into, default = "")] label: String,
 ) -> View {
-  let (track_on, track_off, knob_colour) = theme().toggle_look();
+  let t = theme();
+  let (track_on, track_off, knob_colour) = t.toggle_look();
+  // How far on it is, from 0 to 1. The colours are mixed from it, so a
+  // theme that fades reaches the track at once.
+  let shown = use_animated(if on { 1.0f32 } else { 0.0 }, t.motion.short());
+  // 36 wide, with 2 of padding each side and a 16 knob: it moves 16.
+  let travel = 16.0 * shown;
+  let background = track_off.animate(&track_on, shown);
   let knob: View = Element::new(ElementKind::Box)
     .style(Style {
       width: Size::Fixed(16.0),
       height: Size::Fixed(16.0),
       radius: 8.0,
       background: knob_colour,
+      offset: (travel, 0.0),
       ..Style::default()
     })
     .into();
@@ -177,8 +190,7 @@ pub fn Toggle(
       height: Size::Fixed(20.0),
       padding: Edges::all(2.0),
       radius: 10.0,
-      background: if on { track_on } else { track_off },
-      justify: if on { Justify::End } else { Justify::Start },
+      background,
       align: Align::Center,
       ..Style::default()
     })
