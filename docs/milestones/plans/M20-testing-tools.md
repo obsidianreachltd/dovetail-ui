@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | ID | M20 |
-| Status | In progress |
+| Status | Done |
 | Overview | [M20 overview](../overviews/M20-testing-tools.md) |
-| Last updated | 2026-11-25 |
+| Last updated | 2026-11-26 |
 
 ## Goal
 
@@ -176,7 +176,7 @@ Give application developers a supported way to test their user interface: find e
   - a new package, `dovetail-session`, between `dovetail-layout` and `dovetail-desktop`, with no winit, wgpu or AccessKit;
   - `dovetail_core::now()` and timers on the UI thread, with background tasks kept in real time;
   - `dovetail-testing` as a dev-dependency of its own, not re-exported by `dovetail-ui`, with `pictures` and `windows` features.
-- **Picture tolerance:** the same GPU drivers can differ in a channel by one or two levels. Choose the default from runs on WARP, Metal, lavapipe and a real GPU.
+- **Picture tolerance:** the same GPU drivers can differ in a channel by one or two levels. Choose the default from runs on WARP, Metal, lavapipe and a real GPU. Decided on 2026-11-26: 2 levels in each channel, and 5 pixels in each thousand may differ by more. It passes on all four.
 
 ## Risks
 

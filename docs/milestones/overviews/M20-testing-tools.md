@@ -3,10 +3,10 @@
 | Field | Value |
 |---|---|
 | ID | M20 |
-| Status | In progress |
+| Status | Done |
 | Depends on | M07, M15 |
 | Plan | [M20 plan](../plans/M20-testing-tools.md) |
-| Report | — |
+| Report | [M20 report](../reports/M20-testing-tools.md) |
 
 ## Summary
 
