@@ -135,6 +135,7 @@ Give application developers a supported way to test their user interface: find e
      - 3 tests in `crates/dovetail-testing/tests/pictures.rs`, ignored by default as they need a GPU: a button matches its saved picture; "Count: 1" against the saved "Count: 0" fails, saves both pictures, and only the digit is red in the difference; and a window at scale 2 gives pictures twice the size. The saved pictures, `increment-button.png` and `count-zero.png`, were looked at before they were kept.
      - CI runs them in the window job's GPU step, one at a time on Linux as the other GPU tests are (B0007).
      - The tolerance has been tried only on an NVIDIA GPU here. WARP, Metal and lavapipe in CI will show whether 2 is enough.
+     - The first CI run found one pixel of 1224 on a letter's edge further off on WARP. So `ODD_PIXELS_PER_THOUSAND`, 5, lets that many pixels in each thousand differ by more. A changed digit still gives 71 different pixels of 1224, where 6 may. A failure now also gives the largest difference, so CI shows how far off the systems are.
 8. [x] **Real-window tests**, as the prototype decides:
    - the same finding, input and checking as step 6, through the `Context` hooks, which are extended for typing, pasting, hovering and dragging;
    - waiting for frames instead of acting in `frame_presented`;

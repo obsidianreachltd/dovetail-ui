@@ -89,7 +89,7 @@ ui.assert_picture(&button, "increment-button");
 ```
 
 - **The saved picture** is `tests/pictures/increment-button.png` in the package.
-- **Same on every system:** pictures are painted with the GPU and Dovetail's built-in font, so they look the same on every system. Each colour channel may differ by up to 2 levels.
+- **Same on every system:** pictures are painted with the GPU and Dovetail's built-in font, so they look the same on every system. Each colour channel may differ by up to 2 levels, and 5 pixels in each thousand may differ by more, because GPUs cover the edges of letters a little differently. A failure says how many pixels differ and by how much.
 - **When a comparison fails:** the picture painted now and a picture of the difference, with changed pixels in red, are saved in `target/dovetail-pictures/`. The message gives both paths.
 - **Saving new pictures:** after a change on purpose, run the tests with `DOVETAIL_UPDATE_PICTURES=1`, and look at each new picture before committing it.
 

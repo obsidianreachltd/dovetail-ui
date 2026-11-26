@@ -49,7 +49,7 @@ pub mod windows;
 
 pub use find::{Find, FindError, Found, label, role, text};
 #[cfg(feature = "pictures")]
-pub use pictures::{Picture, TOLERANCE};
+pub use pictures::{ODD_PIXELS_PER_THOUSAND, Picture, TOLERANCE};
 
 /// How long [`TestUi::run_tasks`] and [`TestUi::wait_until`] wait, in real
 /// time, before they fail.

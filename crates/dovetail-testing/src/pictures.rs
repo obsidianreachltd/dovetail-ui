@@ -27,6 +27,11 @@ use crate::{Found, TestUi};
 /// the pixel counts as different. GPUs round colours a little differently.
 pub const TOLERANCE: u8 = 2;
 
+/// How many pixels in each thousand may be further from the saved picture
+/// than [`TOLERANCE`]. GPUs cover the edges of letters a little
+/// differently, so a pixel here and there on an edge can be well off.
+pub const ODD_PIXELS_PER_THOUSAND: usize = 5;
+
 /// The GPU and painter a [`TestUi`] paints pictures with, made when the
 /// first picture is asked for.
 pub(crate) struct Painting {
@@ -141,18 +146,28 @@ fn write(
 
 /// A picture of where `now` differs from `saved`: different pixels in
 /// red, the rest faded.
+/// Also gives how many pixels differ, and the largest difference in any
+/// channel.
 fn difference(
   now: &Picture,
   saved: &Picture,
   tolerance: u8,
-) -> (Picture, usize) {
+) -> (Picture, usize, u8) {
   let mut count = 0;
+  let mut largest = 0;
   let pixels = now
     .pixels
     .iter()
     .zip(&saved.pixels)
     .map(|(a, b)| {
-      if differs(*a, *b, tolerance) {
+      let off = a
+        .iter()
+        .zip(b)
+        .map(|(x, y)| x.abs_diff(*y))
+        .max()
+        .unwrap_or(0);
+      largest = largest.max(off);
+      if off > tolerance {
         count += 1;
         [255, 0, 0, 255]
       } else {
@@ -169,17 +184,8 @@ fn difference(
       pixels,
     },
     count,
+    largest,
   )
-}
-
-fn differs(
-  a: [u8; 4],
-  b: [u8; 4],
-  tolerance: u8,
-) -> bool {
-  a.iter()
-    .zip(&b)
-    .any(|(x, y)| x.abs_diff(*y) > tolerance)
 }
 
 impl TestUi {
@@ -244,6 +250,8 @@ impl TestUi {
 
   /// Compares `element`'s picture with the one saved as
   /// `tests/pictures/{name}.png`, within [`TOLERANCE`] for each channel.
+  /// [`ODD_PIXELS_PER_THOUSAND`] pixels in each thousand may be further
+  /// off.
   ///
   /// # Panics
   ///
@@ -344,14 +352,16 @@ fn compare(
       now_path.display()
     );
   }
-  let (diff, count) = difference(picture, &saved, tolerance);
-  if count > 0 {
+  let (diff, count, largest) = difference(picture, &saved, tolerance);
+  let allowed = picture.pixels.len() * ODD_PIXELS_PER_THOUSAND / 1000;
+  if count > allowed {
     write(&now_path, picture);
     write(&diff_path, &diff);
     panic!(
       "{count} of {} pixels in the picture {name:?} differ from {} by more \
-       than {tolerance}. The picture painted now is {}, and the difference, \
-       in red, is {}.",
+       than {tolerance}, and {allowed} may. The largest difference is \
+       {largest}. The picture painted now is {}, and the difference, in \
+       red, is {}.",
       picture.pixels.len(),
       saved_path.display(),
       now_path.display(),
