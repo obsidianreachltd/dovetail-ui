@@ -38,6 +38,7 @@ Six tests ran in one process, on one event loop:
 | macOS, CI (Apple Paravirtual device, Metal), first run | 3 of 6 pass, 2026-11-25 | Runs on the main thread, and the first window draws in 785 ms. Every window opened after the last one closed never drew. |
 | macOS 26.7 (`macos-26-arm64`), CI, second run, as it is | All 6 pass, 2026-11-25 | First frame after 948 ms; 83 ms for each window after that |
 | macOS 26.7, CI, second run, bringing windows to the front | All 6 pass, 2026-11-25 | First frame after 615 ms; 94 ms for each window after that |
+| macOS, CI, third run (the check before merging) | All 6 pass both ways, 2026-11-25 | No warning from the run without bringing windows to the front |
 
 ### Windows that never drew on macOS
 
@@ -70,4 +71,4 @@ On Windows, in a debug build:
 
 ## Recommendation
 
-It works on all three systems. One macOS run failed, and its cause is not known. M20's real-window tests use a `harness = false` target and a driver that pumps the event loop. [D0026](../decisions/D0026-real-window-tests.md) records this. Until the macOS failure is understood, the runner brings each window to the front as a precaution, and says what each window received when a wait fails.
+It works on all three systems. One macOS run failed, and its cause is not known. M20's real-window tests use a `harness = false` target and a driver that pumps the event loop. [D0026](../decisions/D0026-real-window-tests.md) records this. Until the macOS failure is understood, the runner brings each window to the front as a precaution, and says what each window received when a wait fails. This was built in M20 step 8 (`dovetail_testing::windows`), and CI runs its tests in place of the prototype.

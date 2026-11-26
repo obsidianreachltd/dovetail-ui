@@ -50,6 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   - a GPU canvas that draws with your own wgpu pipeline, with pan, zoom and selection;
   - dockable panels with tabs, splits and floating windows, and layouts that are saved between runs;
   - documents with saving, opening, unsaved-change questions and crash recovery.
+- **Testing tools:** tests that run components with no window, find elements by role and label as screen readers do, click and type through the window, and move time. They can also compare pictures and drive real windows. See [testing](docs/architecture/testing.md).
 - **A command-line tool:** `dovetail new`, `dovetail dev` (rebuilds and restarts on save) and `dovetail build`.
 
 Applications add only the packages they need. A small utility doesn't carry docking or documents.
@@ -103,6 +104,8 @@ Run any example from the repository root with `cargo run -p <name>`. Most also t
 | `dovetail-core` | Components, state, events and the view tree. It has no dependencies. |
 | `dovetail-macros` | `#[component]` and `ui!` |
 | `dovetail-layout` | Layout, scrolling, focus and hit testing |
+| `dovetail-session` | One window's components, layout, focus and input, with no window, so tests can run them |
+| `dovetail-testing` | Tests for applications: find elements by role and label, click and type through the window, and move time |
 | `dovetail-render` | GPU painting with wgpu, and custom canvases |
 | `dovetail-desktop` | Windows, input, the clipboard, file dialogs and accessibility, with winit and AccessKit |
 | `dovetail-text` | Fonts, shaping, bidirectional text and text editing |

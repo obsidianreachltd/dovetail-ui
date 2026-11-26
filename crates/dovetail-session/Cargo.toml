@@ -1,0 +1,16 @@
+[package]
+name = "dovetail-session"
+description = "One window's component tree, layout, focus and input, with no window, for Dovetail UI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+dovetail-core.workspace = true
+dovetail-layout.workspace = true
+
+[lints]
+workspace = true

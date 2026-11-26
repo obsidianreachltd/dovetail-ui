@@ -1,12 +1,14 @@
-//! M04 "Done when" item 4: Button, Toggle and Text work. These lay the
-//! controls out and press them through hit testing, with no window or GPU.
+//! M04 "Done when" item 4: Button, Toggle and Text work. These run the
+//! controls with no window or GPU, and click them through the window's own
+//! input (`TestUi`, M20).
 
 extern crate dovetail_core as dovetail;
 
-use dovetail::{Color, Signal, Tree, View, use_state};
+use dovetail::{Color, Role, Signal, View, use_state};
 use dovetail_controls::{Button, Column, Text, Toggle};
-use dovetail_layout::{Content, FixedPitch, Layout, LayoutBox};
+use dovetail_layout::{Content, LayoutBox};
 use dovetail_macros::{component, ui};
+use dovetail_testing::{Options, TestUi, role, text};
 
 #[component]
 fn Panel() -> View {
@@ -22,85 +24,51 @@ fn Panel() -> View {
   }
 }
 
-struct Window {
-  tree: Tree,
-  layout: Layout,
+fn open() -> TestUi {
+  TestUi::with(
+    ui! { Panel {} },
+    Options {
+      size: (400.0, 300.0),
+      ..Options::default()
+    },
+  )
 }
 
-impl Window {
-  fn open() -> Self {
-    let mut tree = Tree::new();
-    tree.mount(ui! { Panel {} });
-    let mut window = Self { tree, layout: Layout::new() };
-    window.refresh();
-    window
-  }
+/// The first box `pick` chooses.
+fn find_box(
+  ui: &TestUi,
+  pick: impl Fn(&LayoutBox) -> bool,
+) -> LayoutBox {
+  ui.layout()
+    .boxes()
+    .iter()
+    .find(|b| pick(b))
+    .cloned()
+    .expect("the box")
+}
 
-  fn refresh(&mut self) {
-    self.tree.update();
-    self
-      .layout
-      .update(&self.tree, 400.0, 300.0, &FixedPitch::default());
-  }
-
-  fn texts(&self) -> Vec<String> {
-    self
-      .layout
-      .boxes()
-      .iter()
-      .filter_map(|b| match &b.content {
-        Content::Text { text, .. } => Some(text.to_string()),
-        _ => None,
-      })
-      .collect()
-  }
-
-  /// The box that contains the text `label`, pressed in its middle.
-  fn click_text(
-    &mut self,
-    label: &str,
-  ) {
-    let target: &LayoutBox = self
-      .layout
-      .boxes()
-      .iter()
-      .find(|b| matches!(&b.content, Content::Text { text, .. } if &**text == label))
-      .unwrap_or_else(|| panic!("no text {label:?}"));
-    let (x, y) = (
-      target.rect.x + target.rect.width / 2.0,
-      target.rect.y + target.rect.height / 2.0,
-    );
-    self
-      .layout
-      .hit_test(x, y)
-      .expect("a press handler under the text")
-      .call(());
-    self.refresh();
-  }
-
-  /// The box of the toggle's track: the first box with a 36-pixel width.
-  fn click_toggle_track(&mut self) {
-    let track = self
-      .layout
-      .boxes()
-      .iter()
-      .find(|b| b.rect.width == 36.0)
-      .expect("toggle track");
-    let (x, y) = (track.rect.x + 5.0, track.rect.y + 5.0);
-    self
-      .layout
-      .hit_test(x, y)
-      .expect("toggle handler")
-      .call(());
-    self.refresh();
-  }
+/// The toggle's track: the box 36 pixels wide.
+fn track(ui: &TestUi) -> LayoutBox {
+  find_box(ui, |b| b.rect.width == 36.0)
 }
 
 #[test]
 fn text_shows_its_value_with_its_size() {
-  let w = Window::open();
-  assert_eq!(w.texts(), ["Clicks: 0", "Add one", "Lights", "off"]);
-  let clicks = w.layout.boxes().iter().find(|b| matches!(&b.content, Content::Text { text, .. } if &**text == "Clicks: 0")).unwrap();
+  let ui = open();
+  let texts: Vec<String> = ui
+    .layout()
+    .boxes()
+    .iter()
+    .filter_map(|b| match &b.content {
+      Content::Text { text, .. } => Some(text.to_string()),
+      _ => None,
+    })
+    .collect();
+  assert_eq!(texts, ["Clicks: 0", "Add one", "Lights", "off"]);
+  let clicks = find_box(
+    &ui,
+    |b| matches!(&b.content, Content::Text { text, .. } if &**text == "Clicks: 0"),
+  );
   let Content::Text { font_size, color, .. } = &clicks.content else {
     unreachable!()
   };
@@ -109,53 +77,42 @@ fn text_shows_its_value_with_its_size() {
 
 #[test]
 fn button_calls_on_click_when_clicked() {
-  let mut w = Window::open();
-  w.click_text("Add one");
-  w.click_text("Add one");
-  assert_eq!(w.texts()[0], "Clicks: 2");
+  let mut ui = open();
+  let add = role(Role::Button).label("Add one");
+  ui.click(add.clone());
+  ui.click(add);
+  ui.find(text("Clicks: 2"));
 }
 
 #[test]
 fn toggle_reports_the_new_value_and_shows_it() {
-  let mut w = Window::open();
-  let off_colour = track_colour(&w);
-  w.click_toggle_track();
-  assert_eq!(w.texts()[3], "on");
-  assert_ne!(track_colour(&w), off_colour, "the track changes colour");
-  // The label is part of the toggle, so clicking it toggles too.
-  w.click_text("Lights");
-  assert_eq!(w.texts()[3], "off");
-}
-
-fn track_colour(w: &Window) -> Color {
-  let track = w
-    .layout
-    .boxes()
-    .iter()
-    .find(|b| b.rect.width == 36.0)
-    .expect("track");
-  match &track.content {
+  let mut ui = open();
+  let lights = role(Role::Switch).label("Lights");
+  let colour = |ui: &TestUi| match &track(ui).content {
     Content::Element(e) => e.style.background,
     _ => unreachable!(),
-  }
+  };
+  let off_colour = colour(&ui);
+  assert_eq!(ui.find(lights.clone()).is_on(), Some(false));
+  let r = track(&ui).rect;
+  ui.click_at((r.x + 5.0, r.y + 5.0));
+  assert_eq!(ui.find(lights.clone()).is_on(), Some(true));
+  ui.find(text("on"));
+  assert_ne!(colour(&ui), off_colour, "the track changes colour");
+  // The label is part of the toggle, so clicking anywhere on it toggles.
+  ui.click(lights.clone());
+  assert_eq!(ui.find(lights).is_on(), Some(false));
+  ui.find(text("off"));
 }
 
 #[test]
 fn toggle_knob_moves_to_the_end_when_on() {
-  let mut w = Window::open();
-  let knob_x = |w: &Window| {
-    w.layout
-      .boxes()
-      .iter()
-      .find(|b| b.rect.width == 16.0)
-      .expect("knob")
-      .rect
-      .x
-  };
-  let off = knob_x(&w);
-  w.click_toggle_track();
+  let mut ui = open();
+  let knob_x = |ui: &TestUi| find_box(ui, |b| b.rect.width == 16.0).rect.x;
+  let off = knob_x(&ui);
+  ui.click(role(Role::Switch).label("Lights"));
   assert_eq!(
-    knob_x(&w) - off,
+    knob_x(&ui) - off,
     16.0,
     "36 wide, 2 padding each side, 16 knob: moves by 16"
   );

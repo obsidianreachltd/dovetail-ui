@@ -3,7 +3,6 @@
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Instant;
 
 use dovetail::{
   Callback, CloseGuard, FileDialog, FileFilter, Signal, Task, create_signal,
@@ -616,7 +615,8 @@ impl DocumentFile {
       self.clear_snapshot();
       return;
     }
-    let now = Instant::now();
+    // The UI thread's clock, which tests can move (D0027).
+    let now = dovetail_core::now();
     let mut write_now = false;
     let mut idle = None;
     let mut old_timer = None;

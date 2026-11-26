@@ -18,6 +18,7 @@ dovetail-text.workspace = true
 [dev-dependencies]
 dovetail-image.workspace = true
 dovetail-layout.workspace = true
+dovetail-testing.workspace = true
 
 [lints]
 workspace = true

@@ -37,7 +37,8 @@ mod platform;
 mod settings;
 
 pub use app::{
-  Application, Context, Error, Frame, WindowId, WindowOptions, run,
+  Application, Context, Error, Frame, Pumped, WindowId, WindowOptions,
+  WindowStats, run,
 };
 pub use dovetail_core::{KeyCode, KeyEvent, Modifiers, NamedKey};
 pub use dovetail_render::PhysicalSize;

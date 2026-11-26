@@ -5,11 +5,11 @@
 
 extern crate dovetail_core as dovetail;
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use dovetail::{
   AccessAction, KeyEvent, Modifiers, NamedKey, PointerButton, PointerEvent,
-  PointerKind, Role, Tree, View, run_task_messages, use_state,
+  PointerKind, Role, Tree, View, use_state,
 };
 use dovetail_controls::{
   CheckBox, Collapsible, Column, Link, NumberField, RadioGroup, Select, Slider,
@@ -17,6 +17,7 @@ use dovetail_controls::{
 };
 use dovetail_layout::{BoxKey, Content, FixedPitch, Layout};
 use dovetail_macros::{component, ui};
+use dovetail_testing::{Options, TestUi, role};
 
 fn options(names: &[&str]) -> Vec<String> {
   names.iter().map(|s| s.to_string()).collect()
@@ -417,54 +418,40 @@ fn a_collapsible_section_opens_and_a_link_presses() {
 }
 
 /// The tooltip wrapper: the element with a description.
-fn tip_wrapper(w: &Window) -> dovetail::Element {
-  w.layout
-    .boxes()
-    .iter()
-    .find_map(|b| match &b.content {
-      Content::Element(e) if e.description.is_some() => Some((**e).clone()),
-      _ => None,
-    })
-    .expect("the tooltip's wrapper")
-}
-
 #[test]
 fn a_tooltip_shows_on_focus_at_once_and_after_a_pause_on_hover() {
-  let mut w = Window::open();
-  let wrapper = tip_wrapper(&w);
-  assert_eq!(wrapper.description.as_deref(), Some("Saves the file"));
-  assert!(w.all(Role::Tooltip, "").is_empty());
+  // Through the window, with the test's clock (M20): no real waiting.
+  let mut ui = TestUi::with(
+    ui! { Panel {} },
+    Options {
+      size: (800.0, 1200.0),
+      ..Options::default()
+    },
+  );
+  let save = role(Role::CheckBox).label("Save");
+  let tip = role(Role::Tooltip).label("Saves the file");
+  // Assistive tools read the tooltip as the control's description.
+  assert_eq!(
+    ui.find(save.clone())
+      .node()
+      .description
+      .as_deref(),
+    Some("Saves the file")
+  );
+  assert!(!ui.has(role(Role::Tooltip)));
 
-  wrapper
-    .on_focus_within
-    .clone()
-    .expect("focus")
-    .call(true);
-  w.refresh();
-  assert!(w.has_text("Saves the file"));
-  assert_eq!(w.all(Role::Tooltip, "").len(), 1);
-  wrapper
-    .on_focus_within
-    .clone()
-    .expect("focus")
-    .call(false);
-  w.refresh();
-  assert!(w.all(Role::Tooltip, "").is_empty());
+  // Focus shows it at once, and it goes with focus.
+  ui.focus(save.clone());
+  ui.find(tip.clone());
+  ui.focus(role(Role::CheckBox).label("Wrap lines"));
+  assert!(!ui.has(role(Role::Tooltip)));
 
-  // Hovering shows it only after the pause.
-  let hover = wrapper.on_hover.clone().expect("hover");
-  hover.call(true);
-  w.refresh();
-  assert!(w.all(Role::Tooltip, "").is_empty());
-  let start = Instant::now();
-  while w.all(Role::Tooltip, "").is_empty() {
-    assert!(start.elapsed() < Duration::from_secs(5), "no tooltip");
-    std::thread::sleep(Duration::from_millis(20));
-    run_task_messages();
-    w.refresh();
-  }
-  assert!(start.elapsed() >= Duration::from_millis(400));
-  hover.call(false);
-  w.refresh();
-  assert!(w.all(Role::Tooltip, "").is_empty());
+  // Hovering shows it only after the pause, half a second.
+  ui.hover(save);
+  ui.advance(Duration::from_millis(400));
+  assert!(!ui.has(role(Role::Tooltip)), "too soon");
+  ui.advance(Duration::from_millis(100));
+  ui.find(tip);
+  ui.leave();
+  assert!(!ui.has(role(Role::Tooltip)));
 }

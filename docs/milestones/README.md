@@ -29,9 +29,9 @@ Use the `_template.md` file in each folder for a new document.
 | M15 | Everyday controls | In progress | M07, M08, M14 | [Overview](overviews/M15-everyday-controls.md) | [Plan](plans/M15-everyday-controls.md) | — | 6/6 |
 | M16 | Data views | In progress | M15 | [Overview](overviews/M16-data-views.md) | [Plan](plans/M16-data-views.md) | — | 6/6 |
 | M17 | Icons and images | In progress | M14 | [Overview](overviews/M17-icons-and-images.md) | [Plan](plans/M17-icons-and-images.md) | — | 8/8 |
-| M18 | System settings and motion | Not started | M07, M14, M17 | [Overview](overviews/M18-system-settings-and-motion.md) | — | — | 0/5 |
+| M18 | System settings and motion | Planned | M07, M14, M17 | [Overview](overviews/M18-system-settings-and-motion.md) | [Plan](plans/M18-system-settings-and-motion.md) | — | 0/5 |
 | M19 | Window management | Not started | M10, M11 | [Overview](overviews/M19-window-management.md) | — | — | 0/6 |
-| M20 | Testing tools | In progress | M07, M15 | [Overview](overviews/M20-testing-tools.md) | [Plan](plans/M20-testing-tools.md) | — | 0/6 |
+| M20 | Testing tools | Done | M07, M15 | [Overview](overviews/M20-testing-tools.md) | [Plan](plans/M20-testing-tools.md) | [Report](reports/M20-testing-tools.md) | 6/6 |
 | M21 | Files from the system | Not started | M11, M19 | [Overview](overviews/M21-files-from-the-system.md) | — | — | 0/5 |
 | M22 | Localisation | Not started | M13, M15, M16 | [Overview](overviews/M22-localisation.md) | — | — | 0/6 |
 | R01 | First release | Not started | M05, M07, M09, M10, M11, M13, M14, M15, M16, M17, M18, M19, M20, M21, M22 | [Overview](overviews/R01-first-release.md) | — | — | 0/6 |

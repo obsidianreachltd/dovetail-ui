@@ -11,6 +11,7 @@ This folder holds all project documents. Start with [goals](vision/goals.md), th
 | [architecture/overview.md](architecture/overview.md) | The layers, component model, rendering, development loop, repository layout, testing and risks |
 | [architecture/crates.md](architecture/crates.md) | The packages and how they depend on each other |
 | [architecture/syntax.md](architecture/syntax.md) | The declarative `ui!` syntax and its open questions |
+| [architecture/testing.md](architecture/testing.md) | How to test a user interface with `dovetail-testing`: headless, pictures and real windows |
 | [architecture/reactive-handles-prototype.md](architecture/reactive-handles-prototype.md) | M02 prototype report comparing two designs for reactive state handles |
 | [architecture/window-tests-prototype.md](architecture/window-tests-prototype.md) | M20 prototype report: real-window tests run from `cargo test` |
 | [decisions/](decisions/README.md) | Records of important decisions |

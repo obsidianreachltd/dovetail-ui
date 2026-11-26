@@ -21,6 +21,7 @@
 pub mod __private;
 mod appearance;
 mod clipboard;
+mod clock;
 mod dialogs;
 mod drag;
 mod element;
@@ -40,6 +41,7 @@ pub use appearance::{
 pub use clipboard::{
   Clipboard, MemoryClipboard, clipboard_text, set_clipboard, set_clipboard_text,
 };
+pub use clock::{Clock, TestClock, now, set_clock};
 pub use dialogs::{
   FileDialog, FileDialogKind, FileDialogs, FileFilter, file_dialogs,
   set_file_dialogs, show_file_dialog,
@@ -68,8 +70,8 @@ pub use reactive::{
   set_on_change,
 };
 pub use task::{
-  Progress, Task, TaskContext, TaskEnd, run_task_messages, set_task_waker,
-  spawn_task, tasks_running,
+  Progress, Task, TaskContext, TaskEnd, next_timer, run_task_messages,
+  set_task_waker, spawn_task, tasks_running, timers_waiting,
 };
 pub use tree::{
   BuildContext, Invalidation, Tree, Update, context_from, current_component,

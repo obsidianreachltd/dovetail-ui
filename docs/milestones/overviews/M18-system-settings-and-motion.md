@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | ID | M18 |
-| Status | Not started |
+| Status | Planned |
 | Depends on | M07, M14, M17 |
-| Plan | — |
+| Plan | [M18 plan](../plans/M18-system-settings-and-motion.md) |
 | Report | — |
 
 ## Summary

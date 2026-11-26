@@ -17,6 +17,8 @@ dovetail-ui = { path = "crates/dovetail-ui", version = "0.1.0" }
 dovetail-core = { path = "crates/dovetail-core", version = "0.1.0" }
 dovetail-macros = { path = "crates/dovetail-macros", version = "0.1.0" }
 dovetail-layout = { path = "crates/dovetail-layout", version = "0.1.0" }
+dovetail-session = { path = "crates/dovetail-session", version = "0.1.0" }
+dovetail-testing = { path = "crates/dovetail-testing", version = "0.1.0" }
 dovetail-render = { path = "crates/dovetail-render", version = "0.1.0" }
 dovetail-desktop = { path = "crates/dovetail-desktop", version = "0.1.0" }
 dovetail-controls = { path = "crates/dovetail-controls", version = "0.1.0" }

@@ -40,8 +40,9 @@ Before you change anything, read the [goals](docs/vision/goals.md), the [princip
 
 ## Testing
 
-- **Self-tests:** every example has a `--self-test` that drives its own window. Add one to any new example, and run every example's self-test after a change to the desktop, layout or painting code.
-- **Input in tests goes through the window** (`Context::click`, `Context::key`), not through the system. A test that must send real key presses checks, before every key, that the window under test is in front, and stops if it is not.
+- **Self-tests:** every example has a `--self-test` that drives its own window. Add one to any new example, with `TestWindows`, and run every example's self-test after a change to the desktop, layout or painting code.
+- **Test UIs with `dovetail-testing`** ([testing](docs/architecture/testing.md)): headless with `TestUi` first, finding elements by role and label. Move its clock with `advance`; never sleep for timers. UI-thread code reads the time with `dovetail_core::now()`.
+- **Input in tests goes through the window** (`TestUi`, `TestWindows`, `Context::click`, `Context::key`), not through the system. A test that must send real key presses checks, before every key, that the window under test is in front, and stops if it is not.
 - `DOVETAIL_LOG_INPUT=1` makes windows log every key, input-method and focus event to stderr ([B0004](docs/bugs/B0004-doubled-letter-when-typing.md)).
 - The other test commands, and the test data that is not committed, are in [CONTRIBUTING.md](CONTRIBUTING.md#other-tests-and-tools).
 

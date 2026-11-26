@@ -1,0 +1,40 @@
+[package]
+name = "dovetail-testing"
+description = "Tests for Dovetail UI applications: find elements, send input through the window, and move time, with no window or GPU."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+dovetail-core.workspace = true
+dovetail-layout.workspace = true
+dovetail-session.workspace = true
+# For comparing pictures (the `pictures` feature): painting needs a GPU
+# adapter.
+dovetail-image = { workspace = true, optional = true }
+dovetail-render = { workspace = true, optional = true }
+# For tests with real windows (the `windows` feature).
+dovetail-desktop = { workspace = true, optional = true }
+
+[dev-dependencies]
+dovetail-ui.workspace = true
+
+[features]
+# Paints elements and compares them with saved pictures. Needs a GPU
+# adapter.
+pictures = ["dep:dovetail-image", "dep:dovetail-render"]
+# Real windows, driven from a test program with `harness = false` (D0026).
+windows = ["dep:dovetail-desktop"]
+
+# Real-window tests. They need the `windows` feature, and run with
+# `cargo test -p dovetail-testing --features windows --test windows -- --ignored`.
+[[test]]
+name = "windows"
+harness = false
+required-features = ["windows"]
+
+[lints]
+workspace = true
