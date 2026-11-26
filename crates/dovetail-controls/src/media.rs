@@ -449,7 +449,8 @@ pub fn Image(
               };
             }
             drop(l);
-            frame.set(next);
+            // The image may have gone while the timer waited (B0009).
+            let _ = frame.try_update(|f| *f = next);
           }),
         ));
       }

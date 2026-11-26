@@ -138,6 +138,7 @@ Read the system settings that shape how an application should behave, such as le
       - With motion on, the picture draws frames of its own. So "no frames while nothing moves" is checked with less motion set, when the picture is still too. The real-window test from step 5 checks it with motion on.
       - To let the self-test set the settings, the desktop now gives each window's session the settings before it waits, not only when a window comes to the front (`Shell::pass_settings`). It is one comparison when nothing changed.
       - CI runs the self-test on all three systems, after the window tests.
+      - Its first CI run failed on all three systems, as its window closed while the picture played: the picture's frame timer ended after the picture had gone, and changed its state ([B0009](../../bugs/B0009-timer-after-component-removed.md)). The tooltip's timer had the same fault. Both now stop when their state has gone.
 12. [x] **Documents:** D0028, the testing guide (frames in `advance`), the crates page, the glossary (less motion, text scale, transition), and AGENTS.md for animating with `use_animated` and respecting less motion.
     - Done on 2026-11-26:
       - The testing guide says how animations move with `advance`, and what a test with its own `Tree` must do.

@@ -334,3 +334,42 @@ fn an_image_that_must_play_plays_with_less_motion() {
   assert_eq!(play(&mut w, 3), [R, G, B, R]);
   set_system_settings(SystemSettings::default());
 }
+
+thread_local! {
+  static SHOWN: Cell<Option<Signal<bool>>> = const { Cell::new(None) };
+}
+
+#[component]
+fn Removable(bytes: Arc<[u8]>) -> View {
+  let shown = use_state(|| true);
+  SHOWN.set(Some(shown));
+  let image: Option<View> = shown.get().then(|| {
+    ui! { Image { source: ImageSource::Bytes(bytes.clone()), label: "One" } }
+  });
+  ui! {
+    Column {
+      Text { value: "Above" }
+      { image.unwrap_or_else(|| View::text("Gone")) }
+    }
+  }
+}
+
+/// B0009: an animation removed while its frame's timer waits is not
+/// stepped on when the timer ends.
+#[test]
+fn an_animation_removed_while_it_plays_stops_quietly() {
+  let mut w = TestUi::with(
+    ui! { Removable { bytes: three_colours(None) } },
+    Options {
+      size: (400.0, 600.0),
+      ..Options::default()
+    },
+  );
+  w.wait_until("the first frame", |ui| colour(ui).is_some());
+  SHOWN.get().expect("state").set(false);
+  w.update();
+  assert_eq!(colour(&w), None, "removed");
+  // The timer for the second frame ends after this.
+  w.advance(Duration::from_secs(1));
+  assert_eq!(colour(&w), None);
+}
