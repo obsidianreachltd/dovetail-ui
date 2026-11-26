@@ -48,8 +48,13 @@ fn move_box(
   to: f32,
 ) -> (Duration, Duration) {
   t.click(w, role(Role::Button).label("Move"));
+  // Waits for the exact value: the text is rounded, so "Box at 200 px"
+  // shows a frame before the box arrives.
   let shows = format!("Box at {to:.0} px");
-  t.wait_until("the box to arrive", |t| t.has(w, text(shows.as_str())));
+  t.wait_until("the box to arrive", |t| {
+    t.has(w, text(shows.as_str()))
+      && moves().last().is_some_and(|(_, at)| *at == to)
+  });
   let seen = moves();
   let start = seen.first().expect("a build when pressed").0;
   let end = seen
