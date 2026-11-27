@@ -953,6 +953,7 @@ impl Context<'_> {
     state: WindowState,
   ) {
     if let Some(entry) = self.shell.windows.get(&window.0) {
+      entry.wanted.set(Some(manage::Wanted::new(state)));
       apply_state(&entry.window, state);
     }
   }
@@ -1058,6 +1059,8 @@ struct WindowEntry {
   focus_alt_until: Option<Instant>,
   /// The name `dovetail dev` keeps its place under (M19).
   dev_name: Option<String>,
+  /// The state it was last asked for, until the system shows it (M19).
+  wanted: std::cell::Cell<Option<manage::Wanted>>,
 }
 
 /// What a window has received from the system and the GPU, so a test that
@@ -1327,6 +1330,10 @@ impl Shell {
         modal: options.modal && owner.is_some(),
         focus_alt_until: None,
         dev_name,
+        wanted: std::cell::Cell::new(
+          (options.state != WindowState::Normal)
+            .then(|| manage::Wanted::new(options.state)),
+        ),
       },
     );
     self.refresh_monitors(event_loop);
@@ -1426,6 +1433,7 @@ impl Shell {
               modal,
               focus_alt_until: None,
               dev_name,
+              wanted: std::cell::Cell::new(None),
             },
           );
         },
@@ -1495,7 +1503,9 @@ fn logical((w, h): (f32, f32)) -> winit::dpi::LogicalSize<f64> {
 
 /// The state a window is in, as winit says (M19).
 pub(crate) fn state_of(window: &Window) -> WindowState {
-  if window.fullscreen().is_some() {
+  if window.fullscreen().is_some()
+    || crate::platform::really_full_screen(window) == Some(true)
+  {
     WindowState::FullScreen
   } else if window.is_minimized() == Some(true) {
     WindowState::Minimised
@@ -1514,8 +1524,13 @@ pub(crate) fn apply_state(
   if state_of(window) == state {
     return;
   }
-  if state != WindowState::FullScreen && window.fullscreen().is_some() {
-    window.set_fullscreen(None);
+  if state != WindowState::FullScreen {
+    if window.fullscreen().is_some() {
+      window.set_fullscreen(None);
+    } else {
+      // winit thinks it is out, but AppKit refused to leave (M19).
+      crate::platform::leave_full_screen(window);
+    }
   }
   match state {
     WindowState::FullScreen => {
@@ -1953,6 +1968,8 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
       // Timers from Task::after, such as a tooltip's wait (D0027).
       .chain(dovetail_core::next_timer())
       .chain(frame_at)
+      // States asked for that the system has not shown yet (M19).
+      .chain(self.shell.ask_wanted_states())
       .min();
     event_loop.set_control_flow(match next {
       Some(at) => ControlFlow::WaitUntil(at),

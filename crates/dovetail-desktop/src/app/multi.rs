@@ -368,6 +368,8 @@ impl Shell {
           HostRequest::State(id, state) => {
             for e in self.windows.values() {
               if e.hosted.as_ref().is_some_and(|h| h.id == id) {
+                e.wanted
+                  .set(Some(super::manage::Wanted::new(state)));
                 super::apply_state(&e.window, state);
               }
             }

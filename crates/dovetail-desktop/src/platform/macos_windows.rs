@@ -6,7 +6,10 @@
 //! - a modal window's owner: the owner's `NSWindow` takes the modal one as
 //!   a child window, so it stays in front of its owner and moves with it;
 //! - a click on the Dock icon with no window open: a method added to the
-//!   application's delegate, `applicationShouldHandleReopen:hasVisibleWindows:`.
+//!   application's delegate, `applicationShouldHandleReopen:hasVisibleWindows:`;
+//! - whether a window really is full screen, from its style mask, and
+//!   leaving full screen when AppKit refused an earlier ask that winit
+//!   counted as done.
 #![allow(unsafe_code)]
 
 use std::cell::RefCell;
@@ -17,6 +20,9 @@ type Sel = *const c_void;
 
 /// `NSWindowAbove`.
 const ABOVE: isize = 1;
+
+/// `NSWindowStyleMaskFullScreen`.
+const FULL_SCREEN_MASK: usize = 1 << 14;
 
 #[link(name = "objc")]
 unsafe extern "C" {
@@ -147,6 +153,42 @@ pub(crate) fn add_child_window(
     let send: unsafe extern "C" fn(Id, Sel, Id, isize) =
       std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
     send(owner, sel(c"addChildWindow:ordered:"), child, ABOVE);
+  }
+}
+
+/// Whether the window of the `NSView` `view` is full screen, as AppKit
+/// says. `view` is winit's view, which lives as long as its window.
+pub(crate) fn is_full_screen(view: *mut c_void) -> bool {
+  // SAFETY: the view is a live NSView; `-[NSView window]` returns its
+  // NSWindow, or null. `-[NSWindow styleMask]` takes nothing and returns an
+  // NSWindowStyleMask, an NSUInteger; objc_msgSend is cast to exactly that
+  // signature.
+  unsafe {
+    let window = send_id(view, c"window");
+    if window.is_null() {
+      return false;
+    }
+    let send: unsafe extern "C" fn(Id, Sel) -> usize =
+      std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+    send(window, sel(c"styleMask")) & FULL_SCREEN_MASK != 0
+  }
+}
+
+/// Toggles full screen for the window of the `NSView` `view`. AppKit
+/// refuses it while the window is changing to or from full screen.
+pub(crate) fn toggle_full_screen(view: *mut c_void) {
+  // SAFETY: the view is a live NSView; `-[NSView window]` returns its
+  // NSWindow, or null. `-[NSWindow toggleFullScreen:]` takes an object,
+  // the sender, which may be nil; objc_msgSend is cast to exactly that
+  // signature.
+  unsafe {
+    let window = send_id(view, c"window");
+    if window.is_null() {
+      return;
+    }
+    let send: unsafe extern "C" fn(Id, Sel, Id) =
+      std::mem::transmute(objc_msgSend as unsafe extern "C" fn());
+    send(window, sel(c"toggleFullScreen:"), std::ptr::null_mut());
   }
 }
 

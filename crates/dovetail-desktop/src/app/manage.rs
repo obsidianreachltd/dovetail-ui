@@ -65,7 +65,63 @@ pub(super) fn read_monitors(event_loop: &ActiveEventLoop) -> Vec<Monitor> {
     .collect()
 }
 
+/// How long to wait before asking again for a window's state.
+const ASK_AGAIN: Duration = Duration::from_millis(300);
+
+/// A state a window was asked for, and how many more times to ask (M19).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Wanted {
+  state: dovetail_core::WindowState,
+  left: u8,
+  next: Instant,
+}
+
+impl Wanted {
+  /// A state just asked for. It is asked again every `ASK_AGAIN`, up to
+  /// eight times, which is longer than the full-screen animation on macOS.
+  pub(crate) fn new(state: dovetail_core::WindowState) -> Self {
+    Self {
+      state,
+      left: 8,
+      // real time: the system's changes take real time.
+      next: Instant::now() + ASK_AGAIN,
+    }
+  }
+}
+
 impl Shell {
+  /// Asks again for the states windows were asked for, until the system
+  /// shows them or the asks run out, and says when to look next. A window
+  /// manager on X11 can miss an ask made before it took the window, and
+  /// AppKit refuses a change while a window is still changing to or from
+  /// full screen (M19).
+  pub(super) fn ask_wanted_states(&self) -> Option<Instant> {
+    // real time: the system's changes take real time, as its animations do.
+    let now = Instant::now();
+    let mut next = None::<Instant>;
+    for entry in self.windows.values() {
+      let Some(mut wanted) = entry.wanted.get() else {
+        continue;
+      };
+      if super::state_of(&entry.window) == wanted.state {
+        entry.wanted.set(None);
+        continue;
+      }
+      if now >= wanted.next {
+        if wanted.left == 0 {
+          entry.wanted.set(None);
+          continue;
+        }
+        wanted.left -= 1;
+        wanted.next = now + ASK_AGAIN;
+        super::apply_state(&entry.window, wanted.state);
+        entry.wanted.set(Some(wanted));
+      }
+      next = Some(next.map_or(wanted.next, |n| n.min(wanted.next)));
+    }
+    next
+  }
+
   /// Reads the monitors again. Components that read them are built again
   /// when they changed (D0029: on window events, with no timer).
   pub(super) fn refresh_monitors(

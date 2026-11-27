@@ -125,7 +125,9 @@ Give applications full control of their top-level windows: several of them, each
   - D0029 is accepted once the prototype's checks by hand are done (its report has the table).
   - A modal window's owner marks its accessibility nodes as disabled while it is blocked, once assistive tools are checked by hand with modal windows.
   - Each system's own notice of a monitor change, such as `WM_DISPLAYCHANGE`, if reading the monitors on window events misses one that matters.
-  - The macOS code (work area, child windows, the Dock click) and the X11 code (work area, `WM_TRANSIENT_FOR`) have only been type-checked. The checks by hand below cover them.
+  - The macOS code (work area, child windows, the Dock click, the real full-screen state) and the X11 code (work area, `WM_TRANSIENT_FOR`) have only been type-checked. The checks by hand below cover them.
+  - CI found that a state asked for can be missed: under Openbox when a window opens maximised, and on macOS when a window leaves full screen just after entering it. The desktop now asks again, every 300 ms up to eight times, until the window shows the state. On macOS it reads the real full-screen state from the `NSWindow`, and leaves full screen itself when AppKit refused to.
+  - [B0010](../../bugs/B0010-docking-float-window-stays-open.md), fixed: the docking self-test checked a step only at a frame it had asked for, and a floating window now closes just after the frame that docks its panel. It now looks again until the check passes.
 
 ## Risks
 

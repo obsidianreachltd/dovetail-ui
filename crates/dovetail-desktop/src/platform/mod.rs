@@ -210,6 +210,48 @@ pub(crate) fn make_owned(
   }
 }
 
+/// Whether the window really is full screen, where winit can be wrong:
+/// on macOS it counts a change that AppKit refused as done (M19). `None`
+/// where winit is trusted.
+pub(crate) fn really_full_screen(
+  window: &winit::window::Window
+) -> Option<bool> {
+  #[cfg(target_os = "macos")]
+  {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    match window.window_handle().ok()?.as_raw() {
+      RawWindowHandle::AppKit(h) => {
+        Some(macos_windows::is_full_screen(h.ns_view.as_ptr()))
+      },
+      _ => None,
+    }
+  }
+  #[cfg(not(target_os = "macos"))]
+  {
+    let _ = window;
+    None
+  }
+}
+
+/// Takes a window out of full screen behind winit's back, when winit
+/// already thinks it is out (M19). Only macOS needs it.
+pub(crate) fn leave_full_screen(window: &winit::window::Window) {
+  #[cfg(target_os = "macos")]
+  {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    if let Ok(handle) = window.window_handle()
+      && let RawWindowHandle::AppKit(h) = handle.as_raw()
+      && macos_windows::is_full_screen(h.ns_view.as_ptr())
+    {
+      macos_windows::toggle_full_screen(h.ns_view.as_ptr());
+    }
+  }
+  #[cfg(not(target_os = "macos"))]
+  {
+    let _ = window;
+  }
+}
+
 /// Calls `reopen` when the user clicks the application's Dock icon while
 /// no window is open (M19). Only macOS has one.
 pub(crate) fn on_reopen(reopen: Box<dyn Fn()>) {

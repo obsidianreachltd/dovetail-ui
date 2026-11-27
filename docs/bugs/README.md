@@ -15,6 +15,8 @@ Each bug has its own file, `B0001-short-name.md`, written from the [template](_t
 | [B0007](B0007-gpu-tests-crash-on-linux-ci.md) | GPU tests sometimes crash on the Linux CI runner | Open | Medium | M00 | Linux |
 | [B0008](B0008-controls-tooltip-step-flaky.md) | The controls self-test's tooltip step sometimes times out | Open | Low | M15 | Windows |
 | [B0009](B0009-timer-after-component-removed.md) | A timer that ends after its component has gone panics | Fixed | High | M18 | All |
+| [B0010](B0010-docking-float-window-stays-open.md) | The docking self-test's drag-back step sometimes times out | Fixed | Low | M19 | All |
+| [B0011](B0011-motion-still-spinner-extra-frame.md) | The motion self-test sometimes sees one frame while the spinner should be still | Open | Low | M18 | Windows |
 
 ## Status words
 
