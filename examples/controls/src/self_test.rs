@@ -8,6 +8,10 @@
 //! - dragging the list's scrollbar, a click on its track, and the wheel;
 //! - a context menu from a right-click and from Shift+F10, with its
 //!   shortcut shown and Paste greyed out;
+//! - M25's toggle button and button group, with the pointer and keys; a
+//!   date chosen from the calendar with keys and typed; a time stepped
+//!   with a key; and a colour chosen with the pointer from the picker a
+//!   colour button opens;
 //! - the theme's colours on the controls, in light and dark.
 
 use std::process::ExitCode;
@@ -54,10 +58,22 @@ enum Step {
   MenuFocusItem,
   MenuShiftF10,
   MenuEscape,
+  PickersTab,
+  ToggleClick,
+  ToggleSpace,
+  GroupClick,
+  GroupArrow,
+  CalendarOpen,
+  CalendarKeys,
+  DateTyped,
+  TimeUp,
+  ColourOpen,
+  ColourHue,
+  ColourEscape,
   Dark,
 }
 
-const STEPS: [Step; 27] = [
+const STEPS: [Step; 39] = [
   Step::Light,
   Step::CheckBoxClick,
   Step::CheckBoxSpace,
@@ -84,6 +100,18 @@ const STEPS: [Step; 27] = [
   Step::MenuFocusItem,
   Step::MenuShiftF10,
   Step::MenuEscape,
+  Step::PickersTab,
+  Step::ToggleClick,
+  Step::ToggleSpace,
+  Step::GroupClick,
+  Step::GroupArrow,
+  Step::CalendarOpen,
+  Step::CalendarKeys,
+  Step::DateTyped,
+  Step::TimeUp,
+  Step::ColourOpen,
+  Step::ColourHue,
+  Step::ColourEscape,
   Step::Dark,
 ];
 
@@ -120,6 +148,24 @@ impl Step {
       Step::MenuFocusItem => "a click gives focus to the list's button",
       Step::MenuShiftF10 => "Shift+F10 opens the menu below it",
       Step::MenuEscape => "Escape closes it",
+      Step::PickersTab => "the Pickers tab shows M25's controls",
+      Step::ToggleClick => {
+        "a click presses the toggle button, in the theme's colour"
+      },
+      Step::ToggleSpace => "Space lets it up again",
+      Step::GroupClick => "a click chooses in the button group",
+      Step::GroupArrow => "Right moves the group's choice and focus",
+      Step::CalendarOpen => {
+        "the calendar button opens the calendar, with focus"
+      },
+      Step::CalendarKeys => "Right and Enter choose the next day and close it",
+      Step::DateTyped => "a typed date and Enter choose it",
+      Step::TimeUp => "Up adds an hour to the time",
+      Step::ColourOpen => "the colour button opens the colour picker",
+      Step::ColourHue => {
+        "a click on the hue track a third along makes it green"
+      },
+      Step::ColourEscape => "Escape closes the picker",
       Step::Dark => "every control takes the dark theme's colours",
     }
   }
@@ -421,6 +467,66 @@ impl Test {
       Step::MenuEscape => {
         cx.key(main, &key(NamedKey::Escape));
       },
+      Step::PickersTab => {
+        let (x, y) = at(Role::Tab, "Pickers")?;
+        cx.click(main, x, y);
+      },
+      Step::ToggleClick => {
+        let (x, y) = at(Role::Button, "Bold")?;
+        cx.click(main, x, y);
+      },
+      Step::ToggleSpace => {
+        cx.key(main, &key(NamedKey::Space));
+      },
+      Step::GroupClick => {
+        let (x, y) = at(Role::RadioButton, "Centre")?;
+        cx.click(main, x, y);
+      },
+      Step::GroupArrow => {
+        cx.key(main, &key(NamedKey::ArrowRight));
+      },
+      Step::CalendarOpen => {
+        let (x, y) = at(Role::Button, "Choose a date")?;
+        cx.click(main, x, y);
+      },
+      Step::CalendarKeys => {
+        cx.key(main, &key(NamedKey::ArrowRight));
+        cx.key(main, &key(NamedKey::Enter));
+      },
+      Step::DateTyped => {
+        let (x, y) = at(Role::TextInput, "Due")?;
+        cx.click(main, x, y);
+        let mut all =
+          KeyEvent::character('a').with(if cfg!(target_os = "macos") {
+            Modifiers { meta: true, ..none }
+          } else {
+            Modifiers { control: true, ..none }
+          });
+        all.text = None;
+        cx.key(main, &all);
+        for c in "2026-03-01".chars() {
+          cx.key(main, &KeyEvent::character(c));
+        }
+        cx.key(main, &key(NamedKey::Enter));
+      },
+      Step::TimeUp => {
+        let (x, y) = at(Role::TimeInput, "Alarm")?;
+        cx.click(main, x, y);
+        cx.key(main, &key(NamedKey::ArrowUp));
+      },
+      Step::ColourOpen => {
+        let (x, y) = at(Role::ColourWell, "Fill")?;
+        cx.click(main, x, y);
+      },
+      Step::ColourHue => {
+        let hue = find(boxes, Role::Slider, "Hue")
+          .ok_or("no hue slider")?
+          .rect;
+        cx.click(main, hue.x + hue.width / 3.0, hue.y + hue.height / 2.0);
+      },
+      Step::ColourEscape => {
+        cx.key(main, &key(NamedKey::Escape));
+      },
       Step::Dark => {
         let (x, y) = at(Role::Button, "Dark")?;
         cx.click(main, x, y);
@@ -581,6 +687,72 @@ impl Test {
       Step::MenuEscape => want(
         find(boxes, Role::Menu, "").is_none(),
         "the menu stayed open".into(),
+      ),
+      Step::PickersTab => {
+        for (role, name) in [
+          (Role::Button, "Bold"),
+          (Role::RadioGroup, "Alignment"),
+          (Role::Group, "Styles"),
+          (Role::DateInput, "Due"),
+          (Role::TimeInput, "Alarm"),
+          (Role::ColourWell, "Fill"),
+        ] {
+          find(boxes, role, name).ok_or(format!("no {role:?} {name:?}"))?;
+        }
+        Ok(())
+      },
+      Step::ToggleClick => {
+        let pressed = ThemeData::light().group_look().pressed;
+        let fill = find(boxes, Role::Button, "Bold")
+          .and_then(element)
+          .map(|e| (e.toggled, e.style.background));
+        want(
+          s.bold.get() && fill == Some((Some(true), pressed)),
+          format!("bold {}, {fill:?}", s.bold.get()),
+        )
+      },
+      Step::ToggleSpace => want(!s.bold.get(), "still pressed".into()),
+      Step::GroupClick => {
+        want(s.align.get() == 1, format!("{}", s.align.get()))
+      },
+      Step::GroupArrow => {
+        let focus = focused.is_some_and(|e| {
+          e.role == Role::RadioButton && e.toggled == Some(true)
+        });
+        want(
+          s.align.get() == 2 && focus,
+          format!("{}, focus moved: {focus}", s.align.get()),
+        )
+      },
+      Step::CalendarOpen => want(
+        focused.is_some_and(|e| e.role == Role::Grid)
+          && find(boxes, Role::Heading, "January 2026").is_some(),
+        "no calendar with focus".into(),
+      ),
+      Step::CalendarKeys => want(
+        s.due.get() == dovetail::Date::new(2026, 1, 21)
+          && find(boxes, Role::Grid, "").is_none(),
+        format!("{:?}", s.due.get()),
+      ),
+      Step::DateTyped => want(
+        s.due.get() == dovetail::Date::new(2026, 3, 1),
+        format!("{:?}", s.due.get()),
+      ),
+      Step::TimeUp => {
+        let t = s.alarm.get();
+        want(t.hour() == 10 && t.minute() == 30, t.to_string())
+      },
+      Step::ColourOpen => want(
+        find(boxes, Role::Slider, "Hue").is_some(),
+        "no picker".into(),
+      ),
+      Step::ColourHue => {
+        let h = dovetail::theme::color::Hsv::from_color(s.fill.get()).h;
+        want((h - 120.0).abs() < 4.0, format!("hue {h}"))
+      },
+      Step::ColourEscape => want(
+        find(boxes, Role::Slider, "Hue").is_none(),
+        "the picker stayed open".into(),
       ),
       Step::Dark => colours(boxes, &ThemeData::dark()),
     }

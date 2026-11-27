@@ -113,6 +113,36 @@ icons! {
   zoom_in => r#"<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M10.5 8v5M8 10.5h5"/>"#,
   /// Zoom out: a magnifying glass with a minus.
   zoom_out => r#"<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M8 10.5h5"/>"#,
+  /// A date: a page of a calendar (M25).
+  calendar => r#"<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>"#,
+  /// A time: a clock face (M25).
+  clock => r#"<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>"#,
+  /// A colour: an artist's palette (M25).
+  palette => r#"<path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2s-1-1.5-1-2.5 1-1.5 2-1.5h2a4 4 0 0 0 4-4c0-4.5-4-8-9-8z"/><circle cx="7.5" cy="11.5" r="1"/><circle cx="10" cy="7.5" r="1"/><circle cx="15" cy="7.5" r="1"/>"#,
+  /// The rectangle tool (M25).
+  rectangle => r#"<rect x="4" y="6" width="16" height="12" rx="1"/>"#,
+  /// The ellipse tool (M25).
+  ellipse => r#"<ellipse cx="12" cy="12" rx="9" ry="6.5"/>"#,
+  /// The line tool (M25).
+  line => r#"<path d="M5 19L19 5"/>"#,
+  /// The pen tool (M25).
+  pen => r#"<path d="M4 20l1-5L16 4l4 4L9 19z"/><path d="M13.5 6.5l4 4"/>"#,
+  /// The brush tool (M25).
+  brush => r#"<path d="M20 4l-9 9"/><path d="M11 13c-2-1-5 0-5 3 0 2-1 3-3 4 4 1 8 0 8-4z"/>"#,
+  /// The eraser tool (M25).
+  eraser => r#"<path d="M8 20h12"/><path d="M4 15l9-9 6 6-8 8H8z"/><path d="M9 10l6 6"/>"#,
+  /// A grid, as View > Grid (M25).
+  grid => r#"<rect x="4" y="4" width="16" height="16" rx="1"/><path d="M4 9.33h16M4 14.67h16M9.33 4v16M14.67 4v16"/>"#,
+  /// Snapping to something: a magnet (M25).
+  magnet => r#"<path d="M6 4v8a6 6 0 0 0 12 0V4"/><path d="M6 8h3M15 8h3M9 4v8a3 3 0 0 0 6 0V4"/>"#,
+  /// The hand tool, which moves the view (M25).
+  hand => r#"<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4.5a1.5 1.5 0 0 1 3 0V12M14 11.5V6a1.5 1.5 0 0 1 3 0v8a7 7 0 0 1-7 7h-.5a6 6 0 0 1-5-2.7L3 15.5a1.5 1.5 0 0 1 2.4-1.8L8 16"/>"#,
+  /// Text lined up on the left (M25).
+  align_left => r#"<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>"#,
+  /// Text centred (M25).
+  align_centre => r#"<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>"#,
+  /// Text lined up on the right (M25).
+  align_right => r#"<path d="M4 6h16M10 10h10M4 14h16M10 18h10"/>"#,
 }
 
 #[cfg(test)]
@@ -121,7 +151,7 @@ mod tests {
 
   #[test]
   fn every_icon_reads_and_draws_inside_its_box() {
-    assert_eq!(ALL.len(), 33);
+    assert_eq!(ALL.len(), 48);
     for (name, icon) in ALL {
       let c = icon().render(24, 24);
       let ink: u32 = c.alpha.iter().map(|&a| u32::from(a)).sum();

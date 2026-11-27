@@ -466,3 +466,35 @@ pub fn settings() -> dovetail_core::SystemSettings {
     double_click_rect: (width, height),
   })
 }
+
+/// `SYSTEMTIME`: a date and time, as `GetLocalTime` fills it.
+#[repr(C)]
+#[derive(Default)]
+struct SystemTime {
+  year: u16,
+  month: u16,
+  day_of_week: u16,
+  day: u16,
+  hour: u16,
+  minute: u16,
+  second: u16,
+  milliseconds: u16,
+}
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+  fn GetLocalTime(time: *mut SystemTime);
+}
+
+/// Today's date in the user's time zone (M25, D0030).
+pub fn local_date() -> Option<dovetail_core::Date> {
+  let mut time = SystemTime::default();
+  // SAFETY: `GetLocalTime` writes one `SYSTEMTIME` to the pointer, which
+  // points at a live value of that layout.
+  unsafe { GetLocalTime(&mut time) };
+  dovetail_core::Date::new(
+    i32::from(time.year),
+    u32::from(time.month),
+    u32::from(time.day),
+  )
+}

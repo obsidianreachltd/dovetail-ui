@@ -306,6 +306,9 @@ pub fn named_by_contents(role: Role) -> bool {
       | Role::TreeItem
       | Role::Cell
       | Role::ColumnHeader
+      | Role::MenuItemCheckBox
+      | Role::MenuItemRadio
+      | Role::GridCell
   )
 }
 

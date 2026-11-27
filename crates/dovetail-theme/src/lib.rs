@@ -23,7 +23,8 @@ mod data;
 mod scheme;
 
 pub use data::{
-  ButtonTheme, CheckTheme, DialogTheme, Extensions, MenuTheme, Motion, RowLook,
+  ButtonTheme, CalendarLook, CalendarTheme, CheckTheme, ColourPickerTheme,
+  DialogTheme, Extensions, GroupLook, GroupTheme, MenuTheme, Motion, RowLook,
   RowTheme, Shapes, SliderTheme, Spacing, TabTheme, TextFieldTheme, TextStyle,
   TextTheme, ThemeData, ToggleTheme, TooltipTheme,
 };

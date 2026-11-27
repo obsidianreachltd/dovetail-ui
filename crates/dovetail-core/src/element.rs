@@ -414,6 +414,24 @@ pub enum Role {
   Cell,
   /// The header of a table column (M16). See [`Element::sorted`].
   ColumnHeader,
+  /// A menu item that is on or off (M25). [`Element::toggled`] says which.
+  MenuItemCheckBox,
+  /// A menu item that is one of a group, of which one is on (M25).
+  /// [`Element::toggled`] says whether it is the one.
+  MenuItemRadio,
+  /// A swatch that shows a colour, and opens a picker to change it (M25).
+  /// Its value is the colour as text, given as [`Element::text_value`].
+  ColourWell,
+  /// A field for a date (M25). Its value is the date as text.
+  DateInput,
+  /// A field for a time of day (M25). Its value is the time as text.
+  TimeInput,
+  /// Rows and columns of cells moved through with the arrow keys, as a
+  /// calendar's days (M25).
+  Grid,
+  /// One cell of a [`Role::Grid`] (M25). [`Element::selected`] says whether
+  /// it is chosen.
+  GridCell,
 }
 
 /// The range of a value, for sliders and number fields (M15).

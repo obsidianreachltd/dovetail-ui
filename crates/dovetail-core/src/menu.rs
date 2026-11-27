@@ -43,6 +43,9 @@ pub enum MenuItemSpec {
     key: Option<MenuKey>,
     /// The command's icon, if it has one (M17).
     icon: Option<MenuIcon>,
+    /// For a command that is on or off, whether it is on, shown with a
+    /// tick (M25). `None` for a plain command.
+    checked: Option<bool>,
   },
 }
 

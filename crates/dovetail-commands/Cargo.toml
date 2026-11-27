@@ -17,6 +17,7 @@ dovetail-theme.workspace = true
 
 [dev-dependencies]
 dovetail-layout.workspace = true
+dovetail-testing.workspace = true
 
 [lints]
 workspace = true

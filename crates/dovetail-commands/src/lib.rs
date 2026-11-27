@@ -20,15 +20,18 @@ extern crate dovetail_core as dovetail;
 mod commands;
 mod context;
 mod history;
+mod palette;
 mod shortcut;
 mod views;
 
 pub use commands::{CommandInfo, Commands, ShortcutConflict};
 pub use context::ContextMenu;
 pub use history::History;
+pub use palette::{LONG_PRESS, ToolPalette};
 pub use shortcut::{Shortcut, ShortcutError, ShortcutKey};
 pub use views::{
-  CommandButton, CommandScope, CommandSearch, Menu, MenuBar, MenuItem, Toolbar,
+  CommandButton, CommandGroup, CommandScope, CommandSearch, Menu, MenuBar,
+  MenuItem, Toolbar,
 };
 
 /// State for unit tests: made while a component builds, as all state must

@@ -20,7 +20,10 @@ use dovetail_theme::theme;
 
 mod canvas;
 mod choice;
+mod colour;
+mod date;
 mod dialog;
+mod group;
 mod media;
 mod pieces;
 mod select;
@@ -30,7 +33,10 @@ mod values;
 
 pub use canvas::{Camera, SelectionBox};
 pub use choice::{CheckBox, RadioGroup};
+pub use colour::{ColourButton, ColourPicker};
+pub use date::{Calendar, DateField, TimeField, date_name};
 pub use dialog::{Dialog, DialogButton, ProgressBar};
+pub use group::{ButtonGroup, Choose, GroupButton, ToggleButton};
 pub use media::{
   Icon, IconButton, Image, ImageSource, ImageState, image_decodes,
 };

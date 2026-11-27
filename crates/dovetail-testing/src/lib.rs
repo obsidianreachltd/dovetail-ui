@@ -134,6 +134,14 @@ pub struct TestUi {
   last_frame: Option<Instant>,
 }
 
+/// Today's date in a [`TestUi`], so tests do not change with the day they
+/// run (M25, D0030): 2026-01-15, a Thursday.
+pub const TEST_TODAY: dovetail_core::Date =
+  match dovetail_core::Date::new(2026, 1, 15) {
+    Some(d) => d,
+    None => panic!("a date"),
+  };
+
 /// How long a frame lasts in [`TestUi::advance`]: 60 frames a second of
 /// the test's time.
 pub const FRAME: Duration = Duration::from_nanos(16_666_667);
@@ -147,8 +155,10 @@ impl TestUi {
   /// Runs `root` as `options` say, and lays it out.
   ///
   /// This installs, for the test's thread, a clipboard in memory, a clock
-  /// that stands still until [`TestUi::advance`] moves it, and
-  /// `options.settings` as the system's settings.
+  /// that stands still until [`TestUi::advance`] moves it,
+  /// `options.settings` as the system's settings, and [`TEST_TODAY`] as
+  /// today's date (M25), which a test can change with
+  /// `dovetail_core::set_today`.
   pub fn with(
     root: View,
     options: Options,
@@ -156,6 +166,7 @@ impl TestUi {
     dovetail_core::set_clipboard(None);
     let clock = TestClock::install();
     dovetail_core::set_system_settings(options.settings);
+    dovetail_core::set_today(Some(TEST_TODAY));
     let session = Session::new(
       options.title,
       View::component::<Show>(ShowProps { view: root }),

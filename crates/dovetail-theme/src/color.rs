@@ -1,5 +1,6 @@
 //! Colour maths for themes: sRGB, OKLab and OKLCH, keeping colours inside
-//! what a screen can show, and WCAG contrast (M14, D0019).
+//! what a screen can show, and WCAG contrast (M14, D0019). Also HSV and hex
+//! text, as colour pickers show them (M25, D0030).
 //!
 //! OKLab is Björn Ottosson's perceptual colour space (2020). Its lightness
 //! follows how light a colour looks, so tones of one hue line up.
@@ -160,9 +161,173 @@ pub fn with_alpha(
   Color { a: alpha, ..c }
 }
 
+/// A colour as hue, saturation and value, as colour pickers show it (M25).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hsv {
+  /// Hue in degrees, from 0 (red) up to 360.
+  pub h: f32,
+  /// Saturation, from 0 (grey) to 1 (full colour).
+  pub s: f32,
+  /// Value, from 0 (black) to 1 (as bright as it can be).
+  pub v: f32,
+  /// Alpha (opacity), from 0 (clear) to 1 (solid).
+  pub a: f32,
+}
+
+impl Hsv {
+  /// `c` as hue, saturation and value. A grey keeps hue 0.
+  pub fn from_color(c: Color) -> Hsv {
+    let max = c.r.max(c.g).max(c.b);
+    let min = c.r.min(c.g).min(c.b);
+    let d = max - min;
+    let h = if d <= f32::EPSILON {
+      0.0
+    } else if max == c.r {
+      60.0 * ((c.g - c.b) / d).rem_euclid(6.0)
+    } else if max == c.g {
+      60.0 * ((c.b - c.r) / d + 2.0)
+    } else {
+      60.0 * ((c.r - c.g) / d + 4.0)
+    };
+    let s = if max <= f32::EPSILON { 0.0 } else { d / max };
+    Hsv { h, s, v: max, a: c.a }
+  }
+
+  /// The colour in sRGB.
+  pub fn to_color(self) -> Color {
+    let h = self.h.rem_euclid(360.0) / 60.0;
+    let s = self.s.clamp(0.0, 1.0);
+    let v = self.v.clamp(0.0, 1.0);
+    let c = v * s;
+    let x = c * (1.0 - (h % 2.0 - 1.0).abs());
+    let (r, g, b) = match h as u32 {
+      0 => (c, x, 0.0),
+      1 => (x, c, 0.0),
+      2 => (0.0, c, x),
+      3 => (0.0, x, c),
+      4 => (x, 0.0, c),
+      _ => (c, 0.0, x),
+    };
+    let m = v - c;
+    Color {
+      r: r + m,
+      g: g + m,
+      b: b + m,
+      a: self.a.clamp(0.0, 1.0),
+    }
+  }
+}
+
+/// One part of a colour, from 0 to 1, as a byte from 0 to 255.
+pub fn to_byte(part: f32) -> u8 {
+  (part.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+/// `c` as hex text: `#rrggbb`, or `#rrggbbaa` when it is not solid.
+pub fn to_hex(c: Color) -> String {
+  let mut s = format!(
+    "#{:02x}{:02x}{:02x}",
+    to_byte(c.r),
+    to_byte(c.g),
+    to_byte(c.b)
+  );
+  if to_byte(c.a) != 255 {
+    s.push_str(&format!("{:02x}", to_byte(c.a)));
+  }
+  s
+}
+
+/// Reads a colour written in hex: `#rgb`, `#rrggbb` or `#rrggbbaa`, with
+/// or without the `#`, in either case. Spaces around it are ignored.
+pub fn parse_hex(text: &str) -> Option<Color> {
+  let text = text.trim();
+  let digits = text.strip_prefix('#').unwrap_or(text);
+  if !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+    return None;
+  }
+  let byte = |i: usize| u8::from_str_radix(&digits[i..i + 2], 16).ok();
+  let part = |b: u8| f32::from(b) / 255.0;
+  match digits.len() {
+    3 => {
+      let n = |i: usize| {
+        u8::from_str_radix(&digits[i..=i], 16)
+          .ok()
+          .map(|v| v * 17)
+      };
+      Some(Color {
+        r: part(n(0)?),
+        g: part(n(1)?),
+        b: part(n(2)?),
+        a: 1.0,
+      })
+    },
+    6 | 8 => Some(Color {
+      r: part(byte(0)?),
+      g: part(byte(2)?),
+      b: part(byte(4)?),
+      a: if digits.len() == 8 {
+        part(byte(6)?)
+      } else {
+        1.0
+      },
+    }),
+    _ => None,
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn colours_go_to_hsv_and_back() {
+    let known = [
+      (Color::hex(0xff0000), (0.0, 1.0, 1.0)),
+      (Color::hex(0x00ff00), (120.0, 1.0, 1.0)),
+      (Color::hex(0x0000ff), (240.0, 1.0, 1.0)),
+      (Color::hex(0xffff00), (60.0, 1.0, 1.0)),
+      (Color::hex(0x808080), (0.0, 0.0, 128.0 / 255.0)),
+      (Color::BLACK, (0.0, 0.0, 0.0)),
+    ];
+    for (c, (h, s, v)) in known {
+      let hsv = Hsv::from_color(c);
+      assert!(
+        (hsv.h - h).abs() < 0.01
+          && (hsv.s - s).abs() < 1e-4
+          && (hsv.v - v).abs() < 1e-4,
+        "{c:?} is {hsv:?}"
+      );
+    }
+    for value in [
+      0x1e66f5, 0xd20f39, 0x40a02b, 0xff00ff, 0x00ffff, 0x123456, 0xfedcba,
+    ] {
+      let c = Color::hex(value);
+      let back = Hsv::from_color(c).to_color();
+      assert_eq!(to_hex(back), to_hex(c), "{value:06x}");
+    }
+    let clear = Hsv { h: 30.0, s: 0.5, v: 0.5, a: 0.25 }.to_color();
+    assert_eq!(clear.a, 0.25);
+    assert_eq!(
+      Hsv { h: 360.0, s: 1.0, v: 1.0, a: 1.0 }.to_color(),
+      Color::hex(0xff0000)
+    );
+  }
+
+  #[test]
+  fn hex_text_reads_and_writes() {
+    assert_eq!(parse_hex("#1e66f5"), Some(Color::hex(0x1e66f5)));
+    assert_eq!(parse_hex(" 1E66F5 "), Some(Color::hex(0x1e66f5)));
+    assert_eq!(parse_hex("#f00"), Some(Color::hex(0xff0000)));
+    let half = parse_hex("#ff000080").unwrap();
+    assert!((half.a - 128.0 / 255.0).abs() < 1e-6);
+    assert_eq!(to_hex(half), "#ff000080");
+    assert_eq!(to_hex(Color::hex(0x00a0ff)), "#00a0ff");
+    for bad in [
+      "", "#", "#12", "#12345", "#1234567", "#gggggg", "12 456",
+    ] {
+      assert_eq!(parse_hex(bad), None, "{bad:?}");
+    }
+  }
 
   #[test]
   fn colours_go_to_oklch_and_back() {

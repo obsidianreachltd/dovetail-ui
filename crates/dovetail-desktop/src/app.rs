@@ -1823,6 +1823,8 @@ fn start(
   let flag = Rc::clone(&state_changed);
   dovetail_core::set_on_change(Some(Box::new(move || flag.set(true))));
   let dialog_owner = Rc::new(Cell::new(0));
+  // Calendars mark today in the user's time zone (M25).
+  dovetail_core::set_date_source(Some(Rc::new(crate::platform::local_date)));
   if pumped {
     dovetail_core::set_clipboard(None);
     dovetail_core::set_native_menus(None);
@@ -1881,6 +1883,7 @@ fn finish<A: Application>(runner: &mut Runner<A>) {
   dovetail_core::set_on_change(None);
   dovetail_core::set_clipboard(None);
   dovetail_core::set_native_menus(None);
+  dovetail_core::set_date_source(None);
   dovetail_core::set_window_host(None);
   // Component trees, canvases and surfaces must go before the GPU.
   runner.shell.windows.clear();

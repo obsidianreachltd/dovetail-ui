@@ -86,7 +86,7 @@ Run any example from the repository root with `cargo run -p <name>`. Most also t
 | `example-counter` | The counter above |
 | `example-form` | A form with labelled fields, a toggle and checks on what is typed |
 | `example-text-field` | Text fields on one line and on several |
-| `example-controls` | Every everyday control, in light and dark |
+| `example-controls` | Every everyday control, in light and dark, with toggle buttons, button groups and date, time and colour pickers |
 | `example-themes` | One window in the light, dark, a custom and the system's theme |
 | `example-commands` | Commands in menus, a toolbar, shortcuts and command search, with undo |
 | `example-data` | A list, a tree and a table of 100,000 rows each, and a property grid |
@@ -95,6 +95,7 @@ Run any example from the repository root with `cargo run -p <name>`. Most also t
 | `example-gpu-canvas` | A PCB-like scene drawn with its own wgpu pipeline, with pan, zoom and selection |
 | `example-docking` | An editor-like window with dockable and floating panels |
 | `example-documents` | A small board of parts kept as a document, with saving and recovery |
+| `example-drawing` | A small drawing tool with a tool palette in a dock panel, toggle commands and menus with ticks |
 | `example-window` | The smallest program: a window cleared with wgpu |
 
 ## Packages

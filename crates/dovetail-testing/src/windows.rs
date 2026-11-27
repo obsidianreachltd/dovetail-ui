@@ -340,6 +340,35 @@ impl TestWindows {
     });
   }
 
+  /// Presses the main button on the element `search` finds, and holds it
+  /// there until [`TestWindows::pointer_up`], as a long press does (M25).
+  /// Returns where it pressed.
+  #[track_caller]
+  pub fn pointer_down(
+    &mut self,
+    w: TestWindow,
+    search: Find,
+  ) -> (f32, f32) {
+    let (x, y) = self.find(w, search).centre();
+    let none = Modifiers::default();
+    self.act(w, move |cx| {
+      cx.pointer(w.0, PointerKind::Move, x, y, none);
+      cx.pointer(w.0, PointerKind::Down, x, y, none);
+    });
+    (x, y)
+  }
+
+  /// Lets go of the main button at `at`, after [`TestWindows::pointer_down`].
+  #[track_caller]
+  pub fn pointer_up(
+    &mut self,
+    w: TestWindow,
+    (x, y): (f32, f32),
+  ) {
+    let none = Modifiers::default();
+    self.act(w, move |cx| cx.pointer(w.0, PointerKind::Up, x, y, none));
+  }
+
   /// Turns the wheel over the element `search` finds, by (`dx`, `dy`)
   /// logical pixels. True when something used it.
   #[track_caller]

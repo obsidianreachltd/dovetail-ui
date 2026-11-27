@@ -1,9 +1,12 @@
-//! M15 example: every everyday control in one window.
+//! M15 example: every everyday control in one window, and M25's toggle
+//! buttons, button groups and pickers.
 //!
 //! - `cargo run -p example-controls` opens it. The buttons at the top
 //!   choose the light or dark theme. The list on the right scrolls, with a
 //!   scrollbar, and right-clicking it (or Shift+F10 on its button) opens a
-//!   context menu. The status bar at the bottom shows what changed last.
+//!   context menu. The Pickers tab has a toggle button, button groups, and
+//!   date, time and colour pickers. The status bar at the bottom shows what
+//!   changed last.
 //! - `cargo run -p example-controls -- --self-test` uses every control
 //!   with the pointer and with the keyboard, drags the scrollbar, opens the
 //!   context menu, and checks the theme's colours in light and dark.
@@ -15,12 +18,13 @@ use std::process::ExitCode;
 
 use dovetail::commands::{CommandScope, Commands, ContextMenu, MenuItem};
 use dovetail::controls::{
-  CheckBox, Collapsible, Link, NumberField, RadioGroup, Select, Separator,
-  Slider, StatusBar, Tabs, Tooltip,
+  ButtonGroup, CheckBox, Choose, Collapsible, ColourButton, DateField,
+  GroupButton, Link, NumberField, RadioGroup, Select, Separator, Slider,
+  StatusBar, Tabs, TimeField, ToggleButton, Tooltip,
 };
 use dovetail::prelude::*;
 use dovetail::theme::{Theme, ThemeData, theme};
-use dovetail::{Edges, Element, ElementKind, Role, Size, Style};
+use dovetail::{Date, Edges, Element, ElementKind, Role, Size, Style, Time};
 
 /// Everything the window shows, kept together so the self-test can read
 /// it.
@@ -35,6 +39,12 @@ pub(crate) struct State {
   pub(crate) tab: Signal<usize>,
   pub(crate) more: Signal<bool>,
   pub(crate) status: Signal<String>,
+  pub(crate) bold: Signal<bool>,
+  pub(crate) align: Signal<usize>,
+  pub(crate) styles: Signal<Vec<usize>>,
+  pub(crate) due: Signal<Option<Date>>,
+  pub(crate) alarm: Signal<Time>,
+  pub(crate) fill: Signal<Color>,
 }
 
 thread_local! {
@@ -44,6 +54,12 @@ thread_local! {
 
 pub(crate) const SIZES: [&str; 3] = ["Small", "Medium", "Large"];
 pub(crate) const FRUIT: [&str; 4] = ["Apple", "Banana", "Blueberry", "Cherry"];
+pub(crate) const ALIGN: [&str; 3] = ["Left", "Centre", "Right"];
+/// The first date the date field takes.
+pub(crate) const FIRST: Date = match Date::new(2026, 1, 1) {
+  Some(d) => d,
+  None => panic!("a date"),
+};
 /// How many rows the scrolling list has.
 pub(crate) const ROWS: usize = 40;
 
@@ -175,6 +191,70 @@ fn Controls(state: State) -> View {
   )
 }
 
+/// M25's controls, on the Pickers tab.
+#[component]
+fn Pickers(state: State) -> View {
+  let s = state;
+  let say = move |what: String| s.status.set(what);
+  let icons = |pairs: &[(dovetail::image::Icon, &str)]| -> Vec<GroupButton> {
+    pairs
+      .iter()
+      .map(|(icon, name)| GroupButton::icon(icon.clone(), *name))
+      .collect()
+  };
+  use dovetail::image::icons;
+  ui! {
+    Column {
+      Row {
+        ToggleButton {
+          on: s.bold.get(),
+          text: "Bold",
+          on_change: move |on| { s.bold.set(on); say(format!("Bold: {on}")); },
+        }
+        ButtonGroup {
+          buttons: icons(&[
+            (icons::align_left(), ALIGN[0]),
+            (icons::align_centre(), ALIGN[1]),
+            (icons::align_right(), ALIGN[2]),
+          ]),
+          chosen: vec![s.align.get()],
+          label: "Alignment",
+          on_press: move |i| { s.align.set(i); say(format!("Alignment: {}", ALIGN[i])); },
+        }
+      }
+      ButtonGroup {
+        buttons: vec![GroupButton::text("Italic"), GroupButton::text("Underline")],
+        chosen: s.styles.get(),
+        choose: Choose::Many,
+        label: "Styles",
+        on_press: move |i| s.styles.update(|v| {
+          if let Some(p) = v.iter().position(|&x| x == i) { v.remove(p); } else { v.push(i); v.sort(); }
+        }),
+      }
+      DateField {
+        value: s.due.get(),
+        first: Some(FIRST),
+        label: "Due",
+        on_change: move |d: Date| { s.due.set(Some(d)); say(format!("Due: {d}")); },
+      }
+      TimeField {
+        value: s.alarm.get(),
+        label: "Alarm",
+        on_change: move |t: Time| { s.alarm.set(t); say(format!("Alarm: {t}")); },
+      }
+      Row {
+        Text { value: "Fill" }
+        ColourButton {
+          value: s.fill.get(),
+          label: "Fill",
+          swatches: vec![theme().colors.primary, theme().colors.error],
+          on_change: move |c| s.fill.set(c),
+        }
+      }
+    }
+  }
+}
+
 /// The tabs and the scrolling list with a context menu, on the right.
 #[component]
 fn Side(
@@ -218,10 +298,16 @@ fn Side(
     vec![
       ui! {
         Tabs {
-          tabs: strings(&["General", "Advanced"]),
+          tabs: strings(&["General", "Advanced", "Pickers"]),
           selected: s.tab.get(),
           on_change: move |i| s.tab.set(i),
-          Text { value: if s.tab.get() == 0 { "General settings" } else { "Advanced settings" } }
+          {
+            match s.tab.get() {
+              0 => ui! { Text { value: "General settings" } },
+              1 => ui! { Text { value: "Advanced settings" } },
+              _ => ui! { Pickers { state: s } },
+            }
+          }
         }
       },
       ui! { Heading { text: "A list" } },
@@ -249,6 +335,12 @@ fn App() -> View {
     tab: use_state(|| 0),
     more: use_state(|| false),
     status: use_state(|| "Ready".to_string()),
+    bold: use_state(|| false),
+    align: use_state(|| 0),
+    styles: use_state(Vec::new),
+    due: use_state(|| Date::new(2026, 1, 20)),
+    alarm: use_state(|| Time::new(9, 30, 0).unwrap_or_default()),
+    fill: use_state(|| theme().colors.primary),
   };
   STATE.set(Some(state));
   let status = state.status;

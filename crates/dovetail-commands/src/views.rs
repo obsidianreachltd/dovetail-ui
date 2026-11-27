@@ -6,7 +6,9 @@ use dovetail::{
   KeyCode, KeyHandler, Layer, MenuItemSpec, MenuModel, MenuSpec, NamedKey,
   Role, Signal, Size, Style, View, native_menus, use_state,
 };
-use dovetail_controls::{Button, IconButton, TextField};
+use dovetail_controls::{
+  Button, ButtonGroup, Choose, GroupButton, IconButton, TextField, ToggleButton,
+};
 use dovetail_macros::{component, ui};
 use dovetail_theme::theme;
 
@@ -68,6 +70,9 @@ pub fn CommandScope(
 /// is greyed out while the command is disabled. With `icon_only`, a command
 /// with an icon shows only the icon, as on a toolbar, and its name is the
 /// button's name for assistive tools.
+///
+/// A command that is on or off (M25) is a [`ToggleButton`], pressed while
+/// it is on.
 #[component]
 pub fn CommandButton(
   commands: Commands,
@@ -77,6 +82,21 @@ pub fn CommandButton(
   let Some(info) = commands.info(&id) else {
     return View::Empty;
   };
+  if let Some(on) = info.on {
+    let only_icon = icon_only && info.icon.is_some();
+    return ui! {
+      ToggleButton {
+        on: on,
+        text: if only_icon { String::new() } else { info.name.clone() },
+        icon: info.icon,
+        label: info.name,
+        enabled: info.enabled,
+        on_change: move |_| {
+          commands.run(&id);
+        },
+      }
+    };
+  }
   if icon_only && let Some(icon) = info.icon {
     return ui! {
       IconButton {
@@ -101,20 +121,245 @@ pub fn CommandButton(
   }
 }
 
-/// A row of tool buttons, such as [`CommandButton`]s.
+/// Buttons joined in a group, made from commands (M25): a segmented
+/// control when the commands are choices of one group, toggle buttons when
+/// each is on or off, and plain buttons otherwise. Each button runs its
+/// command and shows its state. With `icon_only`, commands with icons show
+/// only their icons.
 #[component]
-pub fn Toolbar(children: Children) -> View {
+pub fn CommandGroup(
+  commands: Commands,
+  ids: Vec<String>,
+  #[prop(default)] icon_only: bool,
+  #[prop(default)] vertical: bool,
+  #[prop(into, default = "")] label: String,
+) -> View {
+  let infos: Vec<CommandInfo> = ids
+    .iter()
+    .map(|id| {
+      commands
+        .info(id)
+        .unwrap_or_else(|| CommandInfo::missing(id))
+    })
+    .collect();
+  let group = infos.first().and_then(|i| i.group.clone());
+  let choose = if group.is_some() && infos.iter().all(|i| i.group == group) {
+    Choose::One
+  } else if !infos.is_empty() && infos.iter().all(|i| i.on.is_some()) {
+    Choose::Many
+  } else {
+    Choose::None
+  };
+  let buttons: Vec<GroupButton> = infos
+    .iter()
+    .map(|i| {
+      let b = match (&i.icon, icon_only) {
+        (Some(icon), true) => GroupButton::icon(icon.clone(), i.name.clone()),
+        (icon, _) => GroupButton {
+          icon: icon.clone(),
+          ..GroupButton::text(i.name.clone())
+        },
+      };
+      b.enabled(i.enabled)
+    })
+    .collect();
+  let chosen: Vec<usize> = infos
+    .iter()
+    .enumerate()
+    .filter(|(_, i)| i.on == Some(true))
+    .map(|(n, _)| n)
+    .collect();
+  ui! {
+    ButtonGroup {
+      buttons: buttons,
+      chosen: chosen,
+      choose: choose,
+      vertical: vertical,
+      label: label,
+      on_press: move |n: usize| {
+        if let Some(id) = ids.get(n) {
+          commands.run(id);
+        }
+      },
+    }
+  }
+}
+
+/// A row of tool buttons, such as [`CommandButton`]s and
+/// [`CommandGroup`]s.
+///
+/// With `overflow` (M25, D0030) it fills the width it is given, and the
+/// buttons that do not fit go into a layer opened by a More button at its
+/// end, where each can still be used and shows its state.
+#[component]
+pub fn Toolbar(
+  children: Children,
+  #[prop(default)] overflow: bool,
+) -> View {
+  let style = Style {
+    gap: TOOLBAR_GAP,
+    padding: Edges::xy(8.0, 6.0),
+    align: Align::Center,
+    ..Style::default()
+  };
+  // Each child's width, as it was last laid out in the bar; the room the
+  // bar has; and the More button's width.
+  let widths = use_state(Vec::<f32>::new);
+  let room = use_state(|| f32::INFINITY);
+  let more_width = use_state(|| 0.0f32);
+  let open = use_state(|| false);
+  if !overflow {
+    return Element::new(ElementKind::Row)
+      .style(style)
+      .role(Role::Toolbar)
+      .label("Toolbar")
+      .children(children)
+      .into();
+  }
+  let count = children.len();
+  let shown = fitting(&widths.get(), count, room.get(), more_width.get());
+  let mut bar: Vec<View> = Vec::with_capacity(shown + 1);
+  let mut rest: Vec<View> = Vec::new();
+  for (i, child) in children.into_iter().enumerate() {
+    if i < shown {
+      bar.push(
+        Element::new(ElementKind::Box)
+          .on_size(Callback::new(move |(w, _): (f32, f32)| {
+            if widths.map(|v| v.get(i).copied()) != Some(w) {
+              widths.update(|v| {
+                if v.len() <= i {
+                  v.resize(i + 1, f32::NAN);
+                }
+                v[i] = w;
+              });
+            }
+          }))
+          .children([child])
+          .into(),
+      );
+    } else {
+      rest.push(child);
+    }
+  }
+  if !rest.is_empty() {
+    let mut inside: Vec<View> = vec![View::from(
+      dovetail_image::icons::more()
+        .picture()
+        .label("More tools"),
+    )];
+    if open.get() {
+      inside.push(
+        Element::new(ElementKind::Box)
+          .style(Style {
+            layer: Some(Layer::Fill),
+            ..Style::default()
+          })
+          .on_press(Callback::new(move |()| open.set(false)))
+          .into(),
+      );
+      inside.push(
+        Element::new(ElementKind::Column)
+          .style(Style {
+            layer: Some(Layer::Below),
+            padding: Edges::all(6.0),
+            gap: TOOLBAR_GAP,
+            align: Align::Start,
+            background: menu_background(),
+            border: Border { width: 1.0, color: edge() },
+            radius: 6.0,
+            ..Style::default()
+          })
+          .role(Role::Toolbar)
+          .label("More tools")
+          .on_key(KeyHandler::new(move |event| {
+            if event.is(NamedKey::Escape) {
+              open.set(false);
+              true
+            } else {
+              false
+            }
+          }))
+          .on_press(Callback::new(|()| {}))
+          .children(rest)
+          .into(),
+      );
+    }
+    let t = theme();
+    bar.push(
+      Element::new(ElementKind::Box)
+        .style(Style {
+          padding: Edges::all(t.spacing.of(1.5)),
+          radius: 4.0,
+          text_color: Some(ink()),
+          ..Style::default()
+        })
+        .role(Role::Button)
+        .label("More tools")
+        .expanded(open.get())
+        .focusable(true)
+        .on_press(Callback::new(move |()| open.set(!open.get())))
+        .on_size(Callback::new(move |(w, _): (f32, f32)| {
+          if more_width.get() != w {
+            more_width.set(w);
+          }
+        }))
+        .children(inside)
+        .into(),
+    );
+  }
   Element::new(ElementKind::Row)
     .style(Style {
-      gap: 6.0,
-      padding: Edges::xy(8.0, 6.0),
-      align: Align::Center,
-      ..Style::default()
+      width: Size::Fill,
+      clip: !open.get(),
+      ..style
     })
     .role(Role::Toolbar)
     .label("Toolbar")
-    .children(children)
+    .on_size(Callback::new(move |(w, _): (f32, f32)| {
+      let inner = w - 16.0;
+      if room.get() != inner {
+        room.set(inner);
+      }
+    }))
+    .children(bar)
     .into()
+}
+
+/// The space between toolbar buttons.
+const TOOLBAR_GAP: f32 = 6.0;
+
+/// How many of `count` buttons, with these `widths`, fit in `room`,
+/// leaving space for a More button `more` wide when some do not. A button
+/// not measured yet counts as fitting, so it is shown and measured.
+pub(crate) fn fitting(
+  widths: &[f32],
+  count: usize,
+  room: f32,
+  more: f32,
+) -> usize {
+  let width = |i: usize| {
+    widths
+      .get(i)
+      .copied()
+      .filter(|w| w.is_finite())
+      .unwrap_or(0.0)
+  };
+  let total: f32 = (0..count).map(width).sum::<f32>()
+    + TOOLBAR_GAP * count.saturating_sub(1) as f32;
+  if total <= room + 0.5 {
+    return count;
+  }
+  // Room for the More button, with its gap.
+  let room = room - more - TOOLBAR_GAP;
+  let mut used = 0.0;
+  for i in 0..count {
+    let next = used + width(i) + if i > 0 { TOOLBAR_GAP } else { 0.0 };
+    if next > room + 0.5 {
+      return i;
+    }
+    used = next;
+  }
+  count
 }
 
 /// One menu of a [`MenuBar`]: a title and its items.
@@ -179,6 +424,7 @@ fn model(
                 enabled: c.enabled,
                 key: c.shortcut.map(|s| s.menu_key()),
                 icon: c.icon.as_ref().map(menu_icon),
+                checked: c.on,
               })
             },
           })
@@ -363,6 +609,7 @@ fn drop_down(
 ) -> View {
   let menu = &menus[index];
   let lit = highlight.get();
+  let marks = has_marks(commands, &menu.items);
   let rows: Vec<View> = menu
     .items
     .iter()
@@ -376,15 +623,10 @@ fn drop_down(
         })
         .into(),
       MenuItem::Command(id) => {
-        let info = commands.info(id).unwrap_or(CommandInfo {
-          id: id.clone(),
-          name: id.clone(),
-          shortcut: None,
-          default_shortcut: None,
-          enabled: false,
-          icon: None,
-        });
-        menu_row(commands, &info, lit == Some(i), Some(open))
+        let info = commands
+          .info(id)
+          .unwrap_or_else(|| CommandInfo::missing(id));
+        menu_row(commands, &info, lit == Some(i), Some(open), marks)
       },
     })
     .collect();
@@ -418,13 +660,61 @@ fn drop_down(
     .into()
 }
 
+/// True when some command in `items` is on or off, so every row leaves room
+/// for a tick or a dot (M25).
+pub(crate) fn has_marks(
+  commands: Commands,
+  items: &[MenuItem],
+) -> bool {
+  items.iter().any(|item| {
+    matches!(item, MenuItem::Command(id) if commands.is_on(id).is_some())
+  })
+}
+
+/// The tick or dot before a command that is on or off (M25), or the room
+/// for one, or nothing when `marks` is false.
+fn mark(
+  info: &CommandInfo,
+  marks: bool,
+) -> View {
+  if !marks {
+    return View::Empty;
+  }
+  let icon = match (info.on, &info.group) {
+    (Some(true), Some(_)) => Some(dovetail_image::icons::dot()),
+    (Some(true), None) => Some(dovetail_image::icons::check()),
+    _ => None,
+  };
+  Element::new(ElementKind::Box)
+    .style(Style {
+      width: Size::Fixed(16.0),
+      height: Size::Fixed(16.0),
+      ..Style::default()
+    })
+    .children(icon.map(|i| View::from(i.picture().size(16.0))))
+    .into()
+}
+
+/// The role of a menu item for a command: a check box or radio item for
+/// one that is on or off (M25).
+pub(crate) fn item_role(info: &CommandInfo) -> Role {
+  match (info.on, &info.group) {
+    (Some(_), Some(_)) => Role::MenuItemRadio,
+    (Some(_), None) => Role::MenuItemCheckBox,
+    _ => Role::MenuItem,
+  }
+}
+
 /// One item: the command's name and shortcut, highlighted or greyed out.
-/// With `close`, choosing it closes the menu first.
+/// With `close`, choosing it closes the menu first. With `marks`, it
+/// leaves room for a tick or a dot, which it shows while its command is on
+/// (M25).
 pub(crate) fn menu_row(
   commands: Commands,
   info: &CommandInfo,
   lit: bool,
   close: Option<Signal<Option<usize>>>,
+  marks: bool,
 ) -> View {
   let id = info.id.clone();
   let mut row = Element::new(ElementKind::Row)
@@ -441,24 +731,34 @@ pub(crate) fn menu_row(
       text_color: Some(if info.enabled { ink() } else { greyed() }),
       ..Style::default()
     })
-    .role(Role::MenuItem)
+    .role(item_role(info))
     .label(info.name.clone())
     .children([
-      match &info.icon {
-        // The icon is decoration: the label names the item.
-        Some(icon) => Element::new(ElementKind::Row)
-          .style(Style {
-            gap: 8.0,
-            align: Align::Center,
-            ..Style::default()
-          })
-          .children([
-            icon.picture().into(),
-            View::text(info.name.clone()),
-          ])
-          .into(),
-        None => View::text(info.name.clone()),
-      },
+      Element::new(ElementKind::Row)
+        .style(Style {
+          gap: 6.0,
+          align: Align::Center,
+          ..Style::default()
+        })
+        .children([
+          mark(info, marks),
+          match &info.icon {
+            // The icon is decoration: the label names the item.
+            Some(icon) => Element::new(ElementKind::Row)
+              .style(Style {
+                gap: 8.0,
+                align: Align::Center,
+                ..Style::default()
+              })
+              .children([
+                icon.picture().into(),
+                View::text(info.name.clone()),
+              ])
+              .into(),
+            None => View::text(info.name.clone()),
+          },
+        ])
+        .into(),
       match &info.shortcut {
         Some(s) => Element::new(ElementKind::Box)
           .style(Style {
@@ -470,6 +770,9 @@ pub(crate) fn menu_row(
         None => View::Empty,
       },
     ]);
+  if let Some(on) = info.on {
+    row = row.toggled(on);
+  }
   if info.enabled {
     row = row.on_press(Callback::new(move |()| {
       if let Some(open) = close {
@@ -561,18 +864,28 @@ pub fn CommandSearch(commands: Commands) -> View {
   }
   let results = found(commands, &query.get());
   let at = chosen.get().min(results.len().saturating_sub(1));
+  let marks = results.iter().any(|c| c.on.is_some());
   let rows: Vec<View> = results
     .iter()
     .enumerate()
     .map(|(i, c)| {
       let close = move || open.set(false);
       let id = c.id.clone();
-      let row = menu_row(commands, c, i == at, None);
+      let row = menu_row(commands, c, i == at, None, marks);
+      // A result is not selected for being on: its state is told in its
+      // description instead (M25).
+      let state = |e: &mut Element| {
+        e.toggled = None;
+        e.description = c
+          .on
+          .map(|on| if on { "On" } else { "Off" }.to_owned());
+      };
       // Choosing closes the search first.
       match row {
         View::Element(e) if c.enabled => {
           let mut e = (*e).clone();
           e.role = Role::ListBoxOption;
+          state(&mut e);
           e.on_press = Some(Callback::new(move |()| {
             close();
             commands.run(&id);
@@ -582,6 +895,7 @@ pub fn CommandSearch(commands: Commands) -> View {
         View::Element(e) => {
           let mut e = (*e).clone();
           e.role = Role::ListBoxOption;
+          state(&mut e);
           e.into()
         },
         other => other,

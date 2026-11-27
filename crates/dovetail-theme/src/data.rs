@@ -362,6 +362,77 @@ impl Extensions {
   }
 }
 
+/// How toggle buttons, button groups and tool palettes look (M25).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct GroupTheme {
+  /// Behind a group's buttons.
+  pub background: Option<Color>,
+  /// A button that is pressed: on, or chosen.
+  pub pressed: Option<Color>,
+  /// Text and icons on a pressed button.
+  pub pressed_text: Option<Color>,
+  /// The line round a group.
+  pub border: Option<Color>,
+}
+
+/// How a calendar looks (M25).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct CalendarTheme {
+  /// The ring round today.
+  pub today: Option<Color>,
+  /// The chosen day.
+  pub chosen: Option<Color>,
+  /// Text on the chosen day.
+  pub chosen_text: Option<Color>,
+  /// Days of the months before and after.
+  pub outside: Option<Color>,
+}
+
+/// How a colour picker looks (M25).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ColourPickerTheme {
+  /// The ring that marks the chosen point and the slider handles.
+  pub ring: Option<Color>,
+  /// The light squares behind a colour that is not solid.
+  pub check_light: Option<Color>,
+  /// The dark squares behind it.
+  pub check_dark: Option<Color>,
+}
+
+/// Resolved colours for toggle buttons, groups and palettes (M25).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GroupLook {
+  /// Behind a group's buttons.
+  pub background: Color,
+  /// A pressed button.
+  pub pressed: Color,
+  /// Text on a pressed button.
+  pub pressed_text: Color,
+  /// Text on a button that is not pressed.
+  pub text: Color,
+  /// The line round a group.
+  pub border: Color,
+  /// Corner radius.
+  pub radius: f32,
+}
+
+/// Resolved colours for a calendar (M25).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CalendarLook {
+  /// The ring round today.
+  pub today: Color,
+  /// The chosen day.
+  pub chosen: Color,
+  /// Text on the chosen day.
+  pub chosen_text: Color,
+  /// Days of the months before and after.
+  pub outside: Color,
+  /// Other days.
+  pub text: Color,
+  /// The day the keyboard or pointer is on.
+  pub hover: Color,
+}
+
 /// Everything a theme holds: colours, text, shapes, spacing, the look of
 /// each kind of control, and the application's own extensions.
 #[derive(Clone, Debug, PartialEq)]
@@ -396,6 +467,12 @@ pub struct ThemeData {
   pub tooltip: TooltipTheme,
   /// Rows in lists, trees and tables (M16).
   pub rows: RowTheme,
+  /// Toggle buttons, button groups and tool palettes (M25).
+  pub group: GroupTheme,
+  /// Calendars (M25).
+  pub calendar: CalendarTheme,
+  /// Colour pickers (M25).
+  pub colour_picker: ColourPickerTheme,
   /// The application's own values.
   pub extensions: Extensions,
 }
@@ -434,6 +511,9 @@ impl ThemeData {
       slider: SliderTheme::default(),
       tooltip: TooltipTheme::default(),
       rows: RowTheme::default(),
+      group: GroupTheme::default(),
+      calendar: CalendarTheme::default(),
+      colour_picker: ColourPickerTheme::default(),
       extensions: Extensions::default(),
     }
   }
@@ -610,6 +690,49 @@ impl ThemeData {
       line: r.line.unwrap_or(c.outline_variant),
       height: r.height.unwrap_or(self.spacing.of(6.5)),
     }
+  }
+
+  /// Toggle buttons, button groups and tool palettes (M25): what is behind
+  /// a group, a pressed button, the text on it, the text on one that is
+  /// not pressed, the line round a group, and the corner radius.
+  pub fn group_look(&self) -> GroupLook {
+    let c = &self.colors;
+    let g = &self.group;
+    GroupLook {
+      background: g.background.unwrap_or(c.surface_container),
+      pressed: g.pressed.unwrap_or(c.secondary_container),
+      pressed_text: g.pressed_text.unwrap_or(c.on_secondary_container),
+      text: c.on_surface,
+      border: g.border.unwrap_or(c.outline_variant),
+      radius: self.shapes.small,
+    }
+  }
+
+  /// A calendar (M25).
+  pub fn calendar_look(&self) -> CalendarLook {
+    let c = &self.colors;
+    let k = &self.calendar;
+    CalendarLook {
+      today: k.today.unwrap_or(c.primary),
+      chosen: k.chosen.unwrap_or(c.primary),
+      chosen_text: k.chosen_text.unwrap_or(c.on_primary),
+      outside: k.outside.unwrap_or(c.on_surface_variant),
+      text: c.on_surface,
+      hover: c.surface_container_highest,
+    }
+  }
+
+  /// A colour picker (M25): the ring round the chosen point and handles,
+  /// and the two colours of the squares behind colours that are not solid.
+  pub fn colour_picker_look(&self) -> (Color, Color, Color) {
+    let c = &self.colors;
+    let p = &self.colour_picker;
+    (
+      p.ring.unwrap_or(c.on_surface),
+      p.check_light.unwrap_or(c.surface),
+      p.check_dark
+        .unwrap_or(c.surface_container_highest),
+    )
   }
 
   /// A dialog's box, the scrim behind it, and its corner radius.

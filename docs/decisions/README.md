@@ -34,6 +34,7 @@ A decision record explains one important choice: why it was made, and what it me
 | [D0026](D0026-real-window-tests.md) | Real-window tests run from `cargo test`, driving the event loop step by step | Accepted | 2026-11-25 |
 | [D0027](D0027-testing-foundations.md) | Testing foundations: windowless input in `dovetail-session`, a clock in core, and `dovetail-testing` | Accepted | 2026-11-25 |
 | [D0028](D0028-system-settings-and-animation.md) | System settings in core, animation on frames, and opacity and offsets in layout | Accepted | 2026-11-26 |
+| [D0030](D0030-pickers-and-tool-palettes.md) | Command state, toolbar overflow by measuring, and pickers drawn with images | Accepted | 2026-11-27 |
 
 ## Status words
 
