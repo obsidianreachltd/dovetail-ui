@@ -8,8 +8,11 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use dovetail::controls::Tooltip;
+use dovetail::desktop::{LogicalSize, WindowOptions};
 use dovetail::prelude::*;
-use dovetail_core::{NamedKey, Role, now, request_frame};
+use dovetail_core::{
+  NamedKey, Role, WindowLimits, WindowState, now, request_frame,
+};
 use dovetail_testing::windows::{TestWindows, run_window_tests};
 use dovetail_testing::{label, role, text};
 
@@ -126,8 +129,94 @@ fn a_tooltip_shows_after_a_real_wait(t: &mut TestWindows) {
   t.close(w);
 }
 
+/// True when `a` is within a pixel of `b`, in each direction.
+fn near(
+  a: (f32, f32),
+  b: (f32, f32),
+) -> bool {
+  (a.0 - b.0).abs() <= 1.0 && (a.1 - b.1).abs() <= 1.0
+}
+
+fn size_limits_hold_in_a_real_window(t: &mut TestWindows) {
+  let options = WindowOptions::new("Limits")
+    .with_size(LogicalSize::new(400.0, 300.0))
+    .with_limits(WindowLimits {
+      min_size: Some((320.0, 240.0)),
+      max_size: Some((500.0, 400.0)),
+      resizable: true,
+    });
+  let w = t.open_with(options, ui! { Counter {} });
+  t.set_size(w, (100.0, 100.0));
+  t.wait_until("the smallest size", move |t| {
+    near(t.place(w).size, (320.0, 240.0))
+  });
+  t.set_size(w, (900.0, 900.0));
+  t.wait_until("the largest size", move |t| {
+    near(t.place(w).size, (500.0, 400.0))
+  });
+  t.close(w);
+}
+
+fn a_real_window_is_maximised_and_restored(t: &mut TestWindows) {
+  let w = t.open("Maximise", (400.0, 300.0), ui! { Counter {} });
+  assert_eq!(t.state(w), WindowState::Normal);
+  t.set_state(w, WindowState::Maximised);
+  t.wait_until("the window to grow", move |t| {
+    let (width, height) = t.place(w).size;
+    width > 400.0 && height > 300.0
+  });
+  t.set_state(w, WindowState::Normal);
+  t.wait_until("the window's own size again", move |t| {
+    near(t.place(w).size, (400.0, 300.0))
+  });
+  // It still works.
+  t.click(w, label("Increment"));
+  t.find(w, text("Count: 1"));
+  t.close(w);
+}
+
+fn a_real_window_opens_maximised(t: &mut TestWindows) {
+  let options =
+    WindowOptions::new("Opens maximised").with_state(WindowState::Maximised);
+  let w = t.open_with(options, ui! { Counter {} });
+  t.wait_until("the window to be maximised", move |t| {
+    t.state(w) == WindowState::Maximised
+  });
+  t.close(w);
+}
+
+fn a_real_window_goes_full_screen_and_back(t: &mut TestWindows) {
+  let w = t.open("Full screen", (400.0, 300.0), ui! { Counter {} });
+  t.set_state(w, WindowState::FullScreen);
+  t.wait_until("the window to fill the screen", move |t| {
+    let (width, height) = t.place(w).size;
+    width > 400.0 && height > 300.0
+  });
+  t.set_state(w, WindowState::Normal);
+  t.wait_until("the window's own size again", move |t| {
+    near(t.place(w).size, (400.0, 300.0))
+  });
+  t.close(w);
+}
+
 fn main() -> ExitCode {
   run_window_tests(&[
+    (
+      "size_limits_hold_in_a_real_window",
+      size_limits_hold_in_a_real_window,
+    ),
+    (
+      "a_real_window_is_maximised_and_restored",
+      a_real_window_is_maximised_and_restored,
+    ),
+    (
+      "a_real_window_opens_maximised",
+      a_real_window_opens_maximised,
+    ),
+    (
+      "a_real_window_goes_full_screen_and_back",
+      a_real_window_goes_full_screen_and_back,
+    ),
     (
       "a_click_in_a_real_window_changes_the_text",
       a_click_in_a_real_window_changes_the_text,

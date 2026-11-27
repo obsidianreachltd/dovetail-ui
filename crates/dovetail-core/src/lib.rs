@@ -33,8 +33,11 @@ mod input;
 mod menu;
 mod picture;
 mod reactive;
+mod saved;
+mod screen;
 mod settings;
 mod task;
+mod toplevel;
 mod tree;
 mod view;
 mod window;
@@ -79,6 +82,11 @@ pub use reactive::{
   ComponentId, RuntimeStats, Signal, StateError, create_signal, runtime_stats,
   set_on_change,
 };
+pub use saved::{SavedReadError, SavedWindows};
+pub use screen::{
+  FRAME_ROOM, Monitor, SavedMonitor, SavedWindow, ScreenRect, fit, monitor_at,
+  monitors, set_monitors,
+};
 pub use settings::{
   MAX_TEXT_SCALE, MIN_TEXT_SCALE, SystemSettings, caret_blink,
   double_click_distance, double_click_time, overlay_scrollbars, reduce_motion,
@@ -88,12 +96,14 @@ pub use task::{
   Progress, Task, TaskContext, TaskEnd, next_timer, run_task_messages,
   set_task_waker, spawn_task, tasks_running, timers_waiting,
 };
+pub use toplevel::{Window, WindowProps};
 pub use tree::{
   BuildContext, Invalidation, Tree, Update, context_from, current_component,
   provide_context, use_context, use_state,
 };
 pub use view::{Callback, Children, Component, ComponentView, Key, View};
 pub use window::{
-  CloseGuard, HostWindow, WindowHost, WindowPlace, WindowRequest,
+  AppWindow, CloseGuard, HostWindow, WindowHost, WindowLimits, WindowPlace,
+  WindowRequest, WindowState, app_windows, bring_to_front, set_app_windows,
   set_window_host, take_close_requests, window_host,
 };

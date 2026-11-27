@@ -48,6 +48,7 @@ fn letter(info: &CommandInfo) -> Option<char> {
       primary: false,
       alt: false,
       shift: false,
+      other: false,
     }) => Some(*c),
     _ => None,
   }

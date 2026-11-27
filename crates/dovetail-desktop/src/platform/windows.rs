@@ -498,3 +498,52 @@ pub fn local_date() -> Option<dovetail_core::Date> {
     u32::from(time.day),
   )
 }
+
+/// `RECT` from `windef.h`.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+struct Rect {
+  left: i32,
+  top: i32,
+  right: i32,
+  bottom: i32,
+}
+
+/// `MONITORINFO` from `winuser.h`.
+#[repr(C)]
+#[derive(Default)]
+struct MonitorInfo {
+  size: u32,
+  monitor: Rect,
+  work: Rect,
+  flags: u32,
+}
+
+#[link(name = "user32")]
+unsafe extern "system" {
+  fn GetMonitorInfoW(
+    monitor: isize,
+    info: *mut MonitorInfo,
+  ) -> i32;
+}
+
+/// The work area of a monitor (M19): the monitor without the taskbar, in
+/// physical pixels. `monitor` is its `HMONITOR`.
+pub fn work_area(monitor: isize) -> Option<dovetail_core::ScreenRect> {
+  let mut info = MonitorInfo {
+    size: std::mem::size_of::<MonitorInfo>() as u32,
+    ..MonitorInfo::default()
+  };
+  // SAFETY: `info` is a MONITORINFO with its size set, as the call
+  // requires; a handle that is not a monitor makes it return 0.
+  let ok = unsafe { GetMonitorInfoW(monitor, &mut info) };
+  let w = info.work;
+  (ok != 0 && w.right > w.left && w.bottom > w.top).then(|| {
+    dovetail_core::ScreenRect::new(
+      w.left as f32,
+      w.top as f32,
+      (w.right - w.left) as f32,
+      (w.bottom - w.top) as f32,
+    )
+  })
+}

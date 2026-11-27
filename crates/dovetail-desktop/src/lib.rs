@@ -38,8 +38,8 @@ mod settings;
 mod system_settings;
 
 pub use app::{
-  Application, Context, Error, Frame, Pumped, WindowId, WindowOptions,
-  WindowStats, run,
+  Application, Context, Error, ExitPolicy, Frame, Pumped, WindowId,
+  WindowOptions, WindowStats, run, run_windows, run_windows_with,
 };
 pub use dovetail_core::{KeyCode, KeyEvent, Modifiers, NamedKey};
 pub use dovetail_render::PhysicalSize;

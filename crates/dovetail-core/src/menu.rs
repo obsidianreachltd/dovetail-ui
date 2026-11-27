@@ -78,6 +78,9 @@ pub struct MenuKey {
   pub shift: bool,
   /// With Alt (Option on macOS).
   pub alt: bool,
+  /// With the other modifier: Control on macOS, the Windows key elsewhere
+  /// (M19).
+  pub other: bool,
 }
 
 /// A system menu bar that shows menus for the application.

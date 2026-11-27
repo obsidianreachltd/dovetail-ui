@@ -68,14 +68,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # winit loads the X11 and keyboard libraries when it starts, so they
       # must be installed even though nothing links against them.
+      # Openbox is a small window manager: without one, X11 windows cannot
+      # be maximised or made full screen (M19).
       - name: Install a display server, X11 libraries and software Vulkan (Linux)
         if: runner.os == 'Linux'
         run: >-
           sudo apt-get update && sudo apt-get install -y
-          xvfb mesa-vulkan-drivers libvulkan1
+          xvfb openbox mesa-vulkan-drivers libvulkan1
           libxkbcommon-x11-0 libx11-xcb1 libxcursor1 libxi6 libxrandr2
       - name: Build
-        run: cargo build -p example-window -p example-counter -p example-motion
+        run: cargo build -p example-window -p example-counter -p example-motion -p example-multi-window
       # A self-test that hangs is stopped by the step's time limit. The
       # `timeout` command is not on macOS runners.
       - name: Counter self-test (M04)
@@ -117,8 +119,12 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
-          $RUN cargo test -p dovetail-testing --features windows --test windows -- --ignored
+          # With a window manager on Linux, which maximising needs (M19).
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a sh -c 'openbox & sleep 1; cargo test -p dovetail-testing --features windows --test windows -- --ignored'
+          else
+            cargo test -p dovetail-testing --features windows --test windows -- --ignored
+          fi
       # Each system setting set from inside the program, an animation's
       # end, and no frames while nothing moves (M18).
       - name: Motion self-test (M18)
@@ -127,6 +133,17 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
           $RUN cargo run -p example-motion -- --self-test
+      # Several windows closed and opened again in their places, a modal
+      # window, full screen, and the exit policy (M19).
+      - name: Multi-window self-test (M19)
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a sh -c 'openbox & sleep 1; cargo run -p example-multi-window -- --self-test'
+          else
+            cargo run -p example-multi-window -- --self-test
+          fi
       - name: Window self-test (M01)
         timeout-minutes: 3
         shell: bash

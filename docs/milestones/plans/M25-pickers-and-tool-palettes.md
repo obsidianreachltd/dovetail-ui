@@ -106,7 +106,7 @@ Add the controls that tools and editors need beyond the everyday ones: date and 
     - Done on 2026-11-27:
       - `examples/controls` has a Pickers tab, and twelve more self-test steps;
       - `examples/drawing` draws rectangles, ellipses, lines, pen and brush strokes with undo, a grid and snapping, a fill colour, a title field, and a dark theme from the View menu. Its self-test makes 24 checks, among them the palette floating in its own window;
-      - the root README lists it. `examples/README.md` is on the M19 branch, so the drawing example is added there when the branches meet;
+      - the root README and `examples/README.md` list it. `examples/README.md` came with M19, merged into this branch on 2026-11-27;
       - Dovetail's icon set has 15 more icons, 48 in all: a calendar, a clock, a palette, drawing tools, a grid, a magnet, a hand and text alignment.
       - `TestWindows` gained `pointer_down` and `pointer_up`, to hold a press.
 13. [x] **Tests**, listed under Testing below.
@@ -124,7 +124,6 @@ All decided in [D0030](../../decisions/D0030-pickers-and-tool-palettes.md):
 - **Today's date:** decided, `today()` in core: a date set by a test, else the system's local date, else the date in UTC. `TestUi` sets 2026-01-15.
 - **Command state and history:** decided, turning a command over is not an edit in `History`.
 - **Follow-ups, after M25:**
-  - `examples/README.md`, on the M19 branch, needs the drawing example and the Pickers tab once the branches meet.
   - A tooltip's layer takes clicks meant for what is under it, and passes them to the element it describes. Tooltips should let the pointer through.
   - Boxes have one corner radius, so a button group cannot round only its outer corners. Corners of their own would let groups share drawn edges.
   - The drawing example's canvas draws shapes as boxes. Ellipses are rounded boxes, and lines are dots. A canvas of its own (M09) would draw them properly.

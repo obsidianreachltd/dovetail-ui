@@ -14,6 +14,7 @@ Plain meanings of the terms used in these documents.
 | Dirty state | A document has changes that are not saved yet. |
 | DPI, display scale | How many physical pixels each logical pixel uses on a screen, for example 150%. |
 | Event | A message that something happened, usually a user action such as a click. |
+| Exit policy | Whether an application ends when its last window closes, or keeps running, as macOS applications do (`ExitPolicy`, M19). |
 | Facade crate | The `dovetail-ui` package (used in code as `dovetail`), which re-exports the common parts so applications need only one import. |
 | Frame | One picture of a window, drawn at the display's rate while something moves. A component asks for the next one with `request_frame()` (M18). |
 | GPU | The graphics processor. Dovetail draws with it through wgpu. |
@@ -22,12 +23,16 @@ Plain meanings of the terms used in these documents.
 | IME | Input method editor. A system tool for typing languages such as Chinese or Japanese, where several key presses build up one character. |
 | Key | A stable value that tells the framework which item in a list is which, even when the list changes. |
 | Less motion | A system setting for people whom movement on screen troubles. With it set, Dovetail's transitions jump to their end and animated images stay still (`reduce_motion()`, M18). |
+| Modal window | A window that blocks input to the window it belongs to until it closes, such as a settings window (M19). |
+| Monitor | One screen the system shows windows on. It has a place on the desktop, a size, a scale and a work area (M19). |
 | Procedural macro | Rust code that runs at compile time and writes other Rust code. `ui!` and `#[component]` are procedural macros. |
 | Property | An input given to a component, such as a button's text. |
 | Pumped loop | An event loop that a test drives one step at a time, instead of handing it control, so window tests can run in `cargo test` (D0026). |
 | Reactive state | A value that, when it changes, makes the parts of the UI that use it update. |
 | Render pass | One step of GPU drawing into a frame. |
+| Root | An application's component tree with no window of its own, whose `Window`s are the application's windows (`run_windows`, M19). |
 | Saved picture | A PNG kept beside a package's tests, which a picture test compares what is painted with (M20). |
+| Saved windows | Each window's place, size and state, kept as text under its name between runs, and fitted onto the monitors there are when it opens again (`SavedWindows`, M19). |
 | Session | One window's component tree, layout, focus and input state, with no window (`dovetail-session`, D0027). Tests run one directly. |
 | Shaping | Turning text into the right glyphs and positions. Needed for scripts such as Arabic. |
 | Surface | The area of a window that the GPU draws into. |
@@ -37,4 +42,6 @@ Plain meanings of the terms used in these documents.
 | Validation app | The small PCB-like document editor built to prove that the framework works. |
 | wgpu | A Rust library for drawing with the GPU on all three operating systems. |
 | winit | A Rust library for creating windows and receiving input on all three operating systems. |
+| Window (component) | A component that opens a top-level window while it is shown, and closes it when it goes (M19). |
+| Work area | The part of a monitor windows should use: the monitor without the taskbar, the menu bar or the Dock (M19). |
 | Workspace | A set of crates in one repository that are built together by Cargo. |

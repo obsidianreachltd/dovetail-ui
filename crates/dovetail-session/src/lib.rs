@@ -288,6 +288,15 @@ impl Session {
     &self.title
   }
 
+  /// True when component `id` is in this window's tree, as the component
+  /// that opened a modal window is in its owner's (M19).
+  pub fn contains(
+    &self,
+    id: dovetail_core::ComponentId,
+  ) -> bool {
+    self.tree.contains(id)
+  }
+
   /// Sets the title, as a component that opened the window can.
   pub fn set_title(
     &mut self,

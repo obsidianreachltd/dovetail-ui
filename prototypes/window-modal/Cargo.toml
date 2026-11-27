@@ -1,0 +1,16 @@
+[package]
+name = "prototype-window-modal"
+description = "M19 prototype: modal windows blocked by Dovetail or by the system, and what each system shows when monitors change."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+dovetail-render.workspace = true
+winit.workspace = true
+
+[lints]
+workspace = true

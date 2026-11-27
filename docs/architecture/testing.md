@@ -83,6 +83,23 @@ Framework code on the UI thread must read the time with `dovetail_core::now()`, 
 
 A test that builds a `Tree` itself, with no `TestUi`, has no frames and a real clock, so animations do not finish in it. Such a test sets less motion with `set_system_settings`.
 
+### Windows
+
+A `TestUi` installs a window host with no windows (M19). Each `Window` a component shows gets a session of its own, so a test finds the windows a tree has open, looks inside them, and closes them:
+
+```rust
+let mut ui = TestUi::new(ui! { App {} });
+assert_eq!(ui.windows().len(), 1);
+ui.switch_to(ui.window("Settings"));
+ui.click(role(Role::Button).label("Done"));
+assert!(ui.windows().is_empty());
+```
+
+- **The window in front:** `switch_to` makes finding, the pointer and the keys act in one window, as a user who brings it to the front. `switch_to_main` goes back. When the window in front closes, the main one is in front again.
+- **As the user:** `close_window` closes a window from its title bar, which asks its component. `set_window_state` and `move_window` change its state and place, and tell its component.
+- **Modal windows:** a window that a modal window blocks refuses clicks, keys and closing, and a click brings the modal window to the front. `blocked_by` says which window blocks another.
+- **Sizes:** each window is laid out at its own size, within its limits. Its text is measured with `FixedPitch`.
+
 ## Pictures
 
 With the `pictures` feature, a test can compare how an element looks with a saved PNG:
@@ -132,6 +149,8 @@ How these tests run:
 - **Time:** time is real here.
 
 The counter's and the form's `--self-test` are written this way, as an example.
+
+A whole application, with its own windows, runs with `set_root`, as `run_windows` runs it (M19). `window_titled` waits for a window a component opened. `set_state`, `set_size` and `move_to` change a window as the system would, and `request_close` asks it to close as its close button does. The multi-window example's `--self-test` closes its windows and starts the application again, to check that they come back where they were.
 
 ## Dovetail's own tests
 

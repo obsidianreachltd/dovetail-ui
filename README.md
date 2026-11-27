@@ -94,6 +94,7 @@ Run any example from the repository root with `cargo run -p <name>`. Most also t
 | `example-motion` | The system's settings as they change, and controls that move unless less motion is set |
 | `example-gpu-canvas` | A PCB-like scene drawn with its own wgpu pipeline, with pan, zoom and selection |
 | `example-docking` | An editor-like window with dockable and floating panels |
+| `example-multi-window` | Several windows that remember their places, a modal settings window, and full screen |
 | `example-documents` | A small board of parts kept as a document, with saving and recovery |
 | `example-drawing` | A small drawing tool with a tool palette in a dock panel, toggle commands and menus with ticks |
 | `example-window` | The smallest program: a window cleared with wgpu |

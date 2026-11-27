@@ -338,6 +338,7 @@ pub fn language() -> Option<String> {
 
 /// `NSEventModifierFlagShift`, `...Option` and `...Command`.
 const SHIFT: usize = 1 << 17;
+const CONTROL: usize = 1 << 18;
 const OPTION: usize = 1 << 19;
 const COMMAND: usize = 1 << 20;
 
@@ -585,6 +586,9 @@ impl NativeMenus for MacMenus {
                 }
                 if key.alt {
                   mask |= OPTION;
+                }
+                if key.other {
+                  mask |= CONTROL;
                 }
                 send_uint(entry, sel(c"setKeyEquivalentModifierMask:"), mask);
               }

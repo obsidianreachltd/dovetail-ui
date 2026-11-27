@@ -507,6 +507,10 @@ impl Application for Test {
     };
     if self.acted {
       if !self.check(cx, main, step) {
+        // Look again at the next frame. What a step waits for may change
+        // with no frame of its own, as a floating window closes just after
+        // the frame that docked its panel (B0010).
+        cx.request_redraw(main);
         return;
       }
       println!("PASS  {}", step.says());
@@ -542,6 +546,20 @@ impl Application for Test {
     println!("FAIL  timed out waiting for: {waiting}");
     if let Some(dock) = DOCK.get() {
       println!("      the layout is:\n{}", dock.layout().to_text());
+    }
+    // Which windows are open, and what they have received, so a wait in
+    // vain says whether a window did not close or did not draw (B0010).
+    for w in cx.windows() {
+      let title = cx.window_title(w).unwrap_or_default();
+      let waiting = cx.ui_session(w).is_some_and(|s| s.needs_update());
+      match cx.window_stats(w) {
+        Some(s) => println!(
+          "      window {title:?}: {} redraw requests, {} frames shown, {} \
+           skipped, hidden {:?}, focused {:?}, changes waiting {waiting}",
+          s.redraws, s.presented, s.skipped, s.occluded, s.focused
+        ),
+        None => println!("      window {title:?}"),
+      }
     }
     cx.exit();
   }
