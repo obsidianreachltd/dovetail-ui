@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | ID | B0014 |
-| Status | In progress |
+| Status | Fixed |
 | Severity | Critical |
 | Milestone | M19 |
 | Found on | 2026-11-27 |
@@ -38,4 +38,4 @@ The AccessKit winit adapter must be created before the window is shown (made vis
 
 ## Fix
 
-A hidden window is given to its owner only after its adapter is made and it is shown. A window opened visible is still given to its owner as it opens. It needs a CI run on macOS to confirm.
+A hidden window is given to its owner only after its adapter is made and it is shown. A window opened visible is still given to its owner as it opens. A CI run on macOS then opened the Settings window without the panic. The multi-window self-test covers it.

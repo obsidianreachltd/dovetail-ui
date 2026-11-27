@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | ID | B0013 |
-| Status | In progress |
+| Status | Fixed |
 | Severity | Medium |
 | Milestone | M19 |
 | Found on | 2026-11-27 |
@@ -52,4 +52,4 @@ The windows have received:
 
 ## Fix
 
-The desktop remembers each window's normal place: the place it was opened at, when it opens in another state, and its place after each move or resize while it is normal. On macOS, if a window asked for its normal state is normal 300 ms later but not at that place, the desktop puts it there. On macOS it also checks that a window opened at a place is there, and puts it there if not. With the macOS behaviour switched on for a run on Windows, the real-window tests and the multi-window, docking, window and documents self-tests passed. It needs a CI run on macOS to confirm, and then a check by hand.
+The desktop remembers each window's normal place: the place it was opened at, when it opens in another state, and its place after each move or resize while it is normal. On macOS, if a window asked for its normal state is normal 300 ms later but not at that place, the desktop puts it there. On macOS it also checks that a window opened at a place is there, and puts it there if not. With the macOS behaviour switched on for a run on Windows, the real-window tests and the multi-window, docking, window and documents self-tests passed. A CI run on macOS then passed the step that closes the windows and opens them again, so each came back at its place, size and state. It has still not been checked by hand on a Mac.

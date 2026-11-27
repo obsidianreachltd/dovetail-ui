@@ -131,7 +131,10 @@ pub fn run() -> ExitCode {
   t.wait_until("the main window to open maximised", move |t| {
     t.state(main) == WindowState::Maximised
   });
-  t.find(main, text("Main window: Maximised"));
+  // The label follows the state on the next rebuild.
+  t.wait_until("the label to say Maximised", move |t| {
+    t.has(main, text("Main window: Maximised"))
+  });
   t.set_state(main, WindowState::Normal);
   t.wait_until(
     &format!("the main window's own place, {main_was:?}"),
@@ -196,7 +199,10 @@ pub fn run() -> ExitCode {
   t.wait_until("full screen", move |t| {
     t.state(main) == WindowState::FullScreen
   });
-  t.find(main, text("Main window: FullScreen"));
+  // The label follows the state on the next rebuild.
+  t.wait_until("the label to say FullScreen", move |t| {
+    t.has(main, text("Main window: FullScreen"))
+  });
   assert!(t.press(main, full_screen_key()));
   t.wait_until("the normal state again", move |t| {
     t.state(main) == WindowState::Normal

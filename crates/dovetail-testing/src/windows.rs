@@ -584,7 +584,8 @@ impl TestWindows {
 
   // Waiting.
 
-  /// Runs `work`, then waits until the window has drawn a frame after it.
+  /// Runs `work`, then waits until the window has drawn a frame after it,
+  /// or has closed, as a click on a window's own Close button closes it.
   #[track_caller]
   fn act<R: 'static>(
     &mut self,
@@ -598,7 +599,7 @@ impl TestWindows {
       out
     });
     self.wait_until("the window to draw what changed", move |t| {
-      t.stats(w).presented > before
+      !t.is_open(w) || t.stats(w).presented > before
     });
     out
   }
