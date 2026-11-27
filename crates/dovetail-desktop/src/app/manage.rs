@@ -65,6 +65,52 @@ pub(super) fn read_monitors(event_loop: &ActiveEventLoop) -> Vec<Monitor> {
     .collect()
 }
 
+/// Where a window is in its normal state, in physical pixels: its frame's
+/// position, where the system says, and its inner size (M19).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct NormalPlace {
+  pub(crate) position: Option<winit::dpi::PhysicalPosition<i32>>,
+  pub(crate) size: winit::dpi::PhysicalSize<u32>,
+}
+
+impl NormalPlace {
+  /// Whether `window` is at this place, give or take a few pixels.
+  fn holds(
+    &self,
+    window: &winit::window::Window,
+  ) -> bool {
+    let near = |a: i64, b: i64| (a - b).abs() <= 4;
+    let size = window.inner_size();
+    let sized = near(i64::from(size.width), i64::from(self.size.width))
+      && near(i64::from(size.height), i64::from(self.size.height));
+    let placed = match (self.position, window.outer_position().ok()) {
+      (Some(a), Some(b)) => {
+        near(i64::from(a.x), i64::from(b.x))
+          && near(i64::from(a.y), i64::from(b.y))
+      },
+      _ => true,
+    };
+    sized && placed
+  }
+
+  /// Puts `window` at this place.
+  fn restore(
+    &self,
+    window: &winit::window::Window,
+  ) {
+    let _ = window.request_inner_size(self.size);
+    if let Some(at) = self.position {
+      window.set_outer_position(at);
+    }
+  }
+}
+
+/// Whether the desktop puts a window back at its normal place itself when
+/// it leaves maximised. On macOS a resizable window unzooms to where AppKit
+/// remembers, which can be its zoomed frame when it opened zoomed; winit
+/// then sees it as normal already. Elsewhere the system does it.
+const PUT_BACK_NORMAL: bool = cfg!(target_os = "macos");
+
 /// How long to wait before asking again for a window's state.
 const ASK_AGAIN: Duration = Duration::from_millis(300);
 
@@ -103,7 +149,16 @@ impl Shell {
       let Some(mut wanted) = entry.wanted.get() else {
         continue;
       };
-      if super::state_of(&entry.window) == wanted.state {
+      let reached = super::state_of(&entry.window) == wanted.state;
+      // Back in the normal state, but not at its normal place (M19).
+      let misplaced = reached
+        && PUT_BACK_NORMAL
+        && wanted.state == dovetail_core::WindowState::Normal
+        && entry
+          .normal
+          .get()
+          .is_some_and(|n| !n.holds(&entry.window));
+      if reached && !misplaced {
         entry.wanted.set(None);
         continue;
       }
@@ -114,12 +169,35 @@ impl Shell {
         }
         wanted.left -= 1;
         wanted.next = now + ASK_AGAIN;
-        super::apply_state(&entry.window, wanted.state);
+        match entry.normal.get() {
+          Some(normal) if misplaced => normal.restore(&entry.window),
+          _ => super::apply_state(&entry.window, wanted.state),
+        }
         entry.wanted.set(Some(wanted));
       }
       next = Some(next.map_or(wanted.next, |n| n.min(wanted.next)));
     }
     next
+  }
+
+  /// Remembers where window `id` is, while it is in its normal state and
+  /// nothing is asked of it, to go back there from maximised (M19).
+  pub(super) fn keep_normal_place(
+    &self,
+    id: WinitId,
+  ) {
+    let Some(entry) = self.windows.get(&id) else {
+      return;
+    };
+    if entry.wanted.get().is_some()
+      || super::state_of(&entry.window) != dovetail_core::WindowState::Normal
+    {
+      return;
+    }
+    entry.normal.set(Some(NormalPlace {
+      position: entry.window.outer_position().ok(),
+      size: entry.window.inner_size(),
+    }));
   }
 
   /// Reads the monitors again. Components that read them are built again
@@ -141,7 +219,7 @@ impl Shell {
         let hosted = e.hosted.as_ref()?;
         Some(AppWindow {
           id: hosted.id,
-          title: e.window.title(),
+          title: e.title.clone(),
           state: e.state,
           focused: e.stats.focused == Some(true),
         })

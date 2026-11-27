@@ -386,6 +386,7 @@ impl Shell {
             for e in self.windows.values_mut() {
               if e.hosted.as_ref().is_some_and(|h| h.id == id) {
                 e.window.set_title(&title);
+                e.title.clone_from(&title);
                 if let Some(ui) = &mut e.ui {
                   ui.session.set_title(title.clone());
                 }

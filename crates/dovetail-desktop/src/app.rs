@@ -485,7 +485,7 @@ impl Context<'_> {
     &self,
     window: WindowId,
   ) -> Option<String> {
-    Some(self.shell.windows.get(&window.0)?.window.title())
+    Some(self.shell.windows.get(&window.0)?.title.clone())
   }
 }
 
@@ -1061,6 +1061,12 @@ struct WindowEntry {
   dev_name: Option<String>,
   /// The state it was last asked for, until the system shows it (M19).
   wanted: std::cell::Cell<Option<manage::Wanted>>,
+  /// Its title, as last set. winit cannot read it back on X11, where
+  /// `Window::title` is always empty (B0012).
+  title: String,
+  /// Where it is in its normal state, to go back to from maximised. AppKit
+  /// does not always take a window back there (M19).
+  normal: std::cell::Cell<Option<manage::NormalPlace>>,
 }
 
 /// What a window has received from the system and the GPU, so a test that
@@ -1226,7 +1232,7 @@ impl Shell {
     }
     let mut attributes = WindowAttributes::default()
       .with_visible(visible)
-      .with_title(options.title)
+      .with_title(options.title.clone())
       .with_inner_size(winit::dpi::LogicalSize::new(
         options.size.width,
         options.size.height,
@@ -1247,16 +1253,21 @@ impl Shell {
     }
     // A position in logical pixels is at the scale of the monitor it is
     // on, as windows report theirs (M19).
+    let mut asked_position = None;
     if let Some((x, y)) = options.position {
       let monitors = manage::read_monitors(event_loop);
       attributes = match monitors
         .iter()
         .find(|m| m.bounds.contains((x * m.scale, y * m.scale)))
       {
-        Some(m) => attributes.with_position(winit::dpi::PhysicalPosition::new(
-          f64::from(x * m.scale).round() as i32,
-          f64::from(y * m.scale).round() as i32,
-        )),
+        Some(m) => {
+          let at = winit::dpi::PhysicalPosition::new(
+            f64::from(x * m.scale).round() as i32,
+            f64::from(y * m.scale).round() as i32,
+          );
+          asked_position = Some(at);
+          attributes.with_position(at)
+        },
         None => attributes.with_position(winit::dpi::LogicalPosition::new(
           f64::from(x),
           f64::from(y),
@@ -1294,6 +1305,7 @@ impl Shell {
     if options.state == WindowState::Minimised {
       window.set_minimized(true);
     }
+    let window_scale = window.scale_factor();
     if let Some(owner) = &owner {
       crate::platform::make_owned(&window, owner);
     }
@@ -1330,6 +1342,17 @@ impl Shell {
         modal: options.modal && owner.is_some(),
         focus_alt_until: None,
         dev_name,
+        normal: std::cell::Cell::new(
+          (options.state != WindowState::Normal).then(|| manage::NormalPlace {
+            position: asked_position,
+            size: winit::dpi::LogicalSize::new(
+              options.size.width,
+              options.size.height,
+            )
+            .to_physical(window_scale),
+          }),
+        ),
+        title: options.title,
         wanted: std::cell::Cell::new(
           (options.state != WindowState::Normal)
             .then(|| manage::Wanted::new(options.state)),
@@ -1373,6 +1396,7 @@ impl Shell {
         Option<winit::window::WindowId>,
         bool,
         Option<String>,
+        String,
       ),
     );
     let windows: Vec<Kept> = self
@@ -1388,7 +1412,13 @@ impl Shell {
           entry.window,
           ui,
           entry.hosted,
-          (entry.limits, entry.owner, entry.modal, entry.dev_name),
+          (
+            entry.limits,
+            entry.owner,
+            entry.modal,
+            entry.dev_name,
+            entry.title,
+          ),
         )
       })
       .collect();
@@ -1399,7 +1429,9 @@ impl Shell {
 
     // 3. Make a new GPU with the first window, and surfaces for the others.
     let mut new_gpu: Option<Gpu> = None;
-    for (id, window, ui, hosted, (limits, owner, modal, dev_name)) in windows {
+    for (id, window, ui, hosted, (limits, owner, modal, dev_name, title)) in
+      windows
+    {
       let size = physical(window.inner_size());
       let surface = match &new_gpu {
         Some(gpu) => WindowSurface::new(gpu, Arc::clone(&window), size),
@@ -1433,6 +1465,8 @@ impl Shell {
               modal,
               focus_alt_until: None,
               dev_name,
+              title,
+              normal: std::cell::Cell::new(None),
               wanted: std::cell::Cell::new(None),
             },
           );
@@ -1721,6 +1755,7 @@ impl<A: Application> Runner<A> {
     }
     if let Some(title) = update.title {
       entry.window.set_title(&title);
+      entry.title.clone_from(&title);
       // The accessibility tree names the window by its title.
       ui.access.reset();
     }
@@ -2071,11 +2106,13 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
         // The state first, so a window maximised is not saved at its
         // maximised size as its normal one (M19).
         self.check_state(event_loop, id);
+        self.shell.keep_normal_place(id);
         self.tell_place(id);
       },
       WindowEvent::Moved(_) => {
         self.save_placement(id);
         self.check_state(event_loop, id);
+        self.shell.keep_normal_place(id);
         self.tell_place(id);
       },
       // A frame asked for while the window was hidden or minimised is
