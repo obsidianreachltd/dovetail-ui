@@ -53,7 +53,7 @@ Add the controls almost every desktop application needs and Dovetail does not ha
 
 - Lists, trees and tables that show many rows, and the property grid: [M16](M16-data-views.md).
 - Icons in buttons and menus: [M17](M17-icons-and-images.md).
-- Date and time pickers, and a colour picker: after R01.
+- Date and time pickers, and a colour picker: [M25](M25-pickers-and-tool-palettes.md).
 - Toast notifications: after R01.
 
 ## Done when

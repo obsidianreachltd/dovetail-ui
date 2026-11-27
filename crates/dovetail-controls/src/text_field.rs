@@ -264,6 +264,17 @@ fn edit_with_ime(
   }
 }
 
+/// True for a key that types a character: one with a character and no
+/// Ctrl, Alt or Command.
+fn types_character(event: &KeyEvent) -> bool {
+  let m = event.modifiers;
+  matches!(&event.key, KeyCode::Character(_))
+    && !m.command()
+    && !m.alt
+    && !m.control
+    && !m.meta
+}
+
 /// Applies a key to the buffer. True when the key was used.
 fn edit_with_key(
   buffer: Signal<TextBuffer>,
@@ -347,6 +358,10 @@ fn edit_with_key(
     },
     _ => match &event.text {
       Some(text) if !text.is_empty() => b.insert(text),
+      // A key that types, with no text because an input method is
+      // composing, is still the field's: a letter must never reach a
+      // shortcut such as a tool's `B` (M25, D0030).
+      _ if types_character(event) => {},
       _ => used = false,
     },
   });

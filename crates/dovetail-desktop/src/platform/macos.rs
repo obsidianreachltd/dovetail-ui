@@ -481,7 +481,7 @@ impl NativeMenus for MacMenus {
     //   keyEquivalent:` takes an NSString, a selector (or null) and an
     //   NSString;
     // - `-addItem:`, `-setSubmenu:`, `-setTarget:`, `-setMainMenu:` take an
-    //   object; `-setTag:` an NSInteger; `-setKeyEquivalentModifierMask:` an
+    //   object; `-setTag:` and `-setState:` an NSInteger; `-setKeyEquivalentModifierMask:` an
     //   NSUInteger; `-setEnabled:` and `-setAutoenablesItems:` a BOOL.
     // Objects made with alloc/init are released once, after they are added
     // to a menu, which keeps them; strings likewise after use. The pool
@@ -563,7 +563,14 @@ impl NativeMenus for MacMenus {
               let line = send(class(c"NSMenuItem"), sel(c"separatorItem"));
               send_id(menu, sel(c"addItem:"), line);
             },
-            MenuItemSpec::Command { id, label, enabled, key, icon } => {
+            MenuItemSpec::Command {
+              id,
+              label,
+              enabled,
+              key,
+              icon,
+              checked,
+            } => {
               let equivalent = key
                 .as_ref()
                 .and_then(key_equivalent)
@@ -588,6 +595,10 @@ impl NativeMenus for MacMenus {
               send_id(entry, sel(c"setTarget:"), target);
               send_int(entry, sel(c"setTag:"), ids.len() as isize);
               send_bool(entry, sel(c"setEnabled:"), i8::from(*enabled));
+              // A tick by a command that is on (M25): `NSControlStateValueOn`.
+              if *checked == Some(true) {
+                send_int(entry, sel(c"setState:"), 1);
+              }
               // The item keeps its image: released once after.
               if let Some(image) = icon
                 .as_ref()

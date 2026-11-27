@@ -48,7 +48,7 @@ In rough order, from the simplest:
 | [`example-counter`](counter/src/main.rs) | M04 | A button and a count, written with `#[component]` and `ui!`. |
 | [`example-text-field`](text-field/src/main.rs) | M06, M13 | Text fields on one line and on several, with English and Arabic. |
 | [`example-form`](form/src/main.rs) | — | A contact form: labelled fields, a toggle, buttons and checks on what is typed. |
-| [`example-controls`](controls/src/main.rs) | M15 | Every everyday control in one window, in light and dark. |
+| [`example-controls`](controls/src/main.rs) | M15, M25 | Every everyday control in one window, in light and dark, with toggle buttons, button groups and date, time and colour pickers. |
 | [`example-themes`](themes/src/main.rs) | M14 | One window in the light, dark, a custom and the system's theme. |
 | [`example-commands`](commands/src/main.rs) | M08 | Commands in menus, a toolbar, shortcuts and command search, with undo. |
 | [`example-data`](data/src/main.rs) | M16 | A list, a tree and a table of 100,000 rows each, and a property grid. |
@@ -58,6 +58,7 @@ In rough order, from the simplest:
 | [`example-docking`](docking/src/main.rs) | M10 | An editor-like window with panels that dock, resize and float. |
 | [`example-documents`](documents/src/main.rs) | M11 | A small board of parts kept as a document, with saving, undo and recovery. |
 | [`example-multi-window`](multi-window/src/main.rs) | M19 | Several windows that keep their places, a modal settings window, and full screen. |
+| [`example-drawing`](drawing/src/main.rs) | M25 | A small drawing tool with a tool palette in a dock panel, toggle commands and menus with ticks. |
 
 ### window
 
@@ -94,7 +95,7 @@ Fill it in with the mouse or the keyboard, where Tab moves between the parts, an
 
 `cargo run -p example-controls`
 
-The buttons at the top choose the light or dark theme. The list on the right scrolls. Right-click it, or press Shift+F10 on its button, for a context menu. The status bar shows what changed last.
+The buttons at the top choose the light or dark theme. The list on the right scrolls. Right-click it, or press Shift+F10 on its button, for a context menu. The Pickers tab has a toggle button, button groups, and date, time and colour pickers. The status bar shows what changed last.
 
 ### themes
 
@@ -155,6 +156,12 @@ Add, move, rename and delete parts. Every edit can be undone. Save, Save As and 
 "New document" opens a window for each document. "Settings" opens a modal window, which blocks the main window until it closes. F11, or Control+Command+F on macOS, or the Full Screen button makes the main window full screen. The list shows the open windows, and a click brings one to the front.
 
 Every window keeps its place, size and state between runs, in `windows.txt` in the application's settings folder. Closing the main window ends the program on Windows and Linux. On macOS it keeps running, and a click on its Dock icon opens the main window again.
+
+### drawing
+
+`cargo run -p example-drawing`
+
+Choose a tool from the palette on the left, then drag on the canvas to draw. Each tool's letter key is in its tooltip: V, R, L, P and H. Shift with a letter goes through the tools behind one button, and a long press, a right-click or Alt+Down opens them. The View menu and the toolbar turn the grid, snapping and the dark theme on and off. Every drawing can be undone. Drag the Tools tab out to make the palette float. A narrow window puts toolbar buttons behind a More button.
 
 ## Environment variables
 

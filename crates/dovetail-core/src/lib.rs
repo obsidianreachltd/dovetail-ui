@@ -23,6 +23,7 @@ mod animate;
 mod appearance;
 mod clipboard;
 mod clock;
+mod date;
 mod dialogs;
 mod drag;
 mod element;
@@ -49,6 +50,10 @@ pub use clipboard::{
   Clipboard, MemoryClipboard, clipboard_text, set_clipboard, set_clipboard_text,
 };
 pub use clock::{Clock, TestClock, now, set_clock};
+pub use date::{
+  Date, DateSource, MAX_YEAR, MIN_YEAR, MONTH_NAMES, Time, Weekday,
+  days_in_month, is_leap_year, set_date_source, set_today, today,
+};
 pub use dialogs::{
   FileDialog, FileDialogKind, FileDialogs, FileFilter, file_dialogs,
   set_file_dialogs, show_file_dialog,

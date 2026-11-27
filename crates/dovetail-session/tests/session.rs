@@ -131,3 +131,50 @@ fn the_accessibility_tree_names_a_button_by_its_text() {
   assert!(buttons[0].children.is_empty());
   assert_eq!(tree.focus, AccessId::ROOT);
 }
+
+/// A box that is built again, with a new press handler, when it takes
+/// focus: as a control whose look follows focus (B0015).
+struct Restyled;
+
+#[derive(PartialEq)]
+struct RestyledProps {
+  presses: Rc<Cell<u32>>,
+}
+
+impl Component for Restyled {
+  type Props = RestyledProps;
+
+  fn build(
+    props: &RestyledProps,
+    _: &mut BuildContext<'_>,
+  ) -> View {
+    let focused = dovetail_core::use_state(|| false);
+    let presses = Rc::clone(&props.presses);
+    Element::new(ElementKind::Box)
+      .focusable(true)
+      .on_focus(Callback::new(move |on| focused.set(on)))
+      .on_press(Callback::new(move |()| presses.set(presses.get() + 1)))
+      .children([View::text(if focused.get() {
+        "Focused"
+      } else {
+        "Plain"
+      })])
+      .into()
+  }
+}
+
+#[test]
+fn a_click_that_builds_the_element_again_still_presses_it() {
+  let presses = Rc::new(Cell::new(0));
+  let mut s = session(View::component::<Restyled>(RestyledProps {
+    presses: Rc::clone(&presses),
+  }));
+  let none = Modifiers::default();
+  s.set_cursor((2.0, 2.0));
+  s.pointer_moved(none);
+  s.press(none, PointerButton::Primary);
+  // Taking focus builds the box again, with a new handler.
+  s.update(Some((200.0, 100.0)));
+  s.release(none, PointerButton::Primary);
+  assert_eq!(presses.get(), 1, "the click still presses it (B0015)");
+}

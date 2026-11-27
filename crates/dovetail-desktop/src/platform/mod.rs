@@ -6,6 +6,8 @@ use std::rc::Rc;
 
 use dovetail_core::Clipboard;
 
+#[cfg(unix)]
+mod local_time;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
@@ -35,6 +37,23 @@ pub(crate) fn language() -> Option<String> {
       .into_iter()
       .filter_map(|name| std::env::var(name).ok())
       .find(|v| !v.is_empty() && v != "C" && v != "POSIX")
+  }
+}
+
+/// Today's date in the user's time zone (M25, D0030): `GetLocalTime` on
+/// Windows, and the C library's `localtime_r` elsewhere.
+pub(crate) fn local_date() -> Option<dovetail_core::Date> {
+  #[cfg(windows)]
+  {
+    windows::local_date()
+  }
+  #[cfg(unix)]
+  {
+    local_time::local_date()
+  }
+  #[cfg(not(any(windows, unix)))]
+  {
+    None
   }
 }
 

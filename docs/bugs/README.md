@@ -20,6 +20,7 @@ Each bug has its own file, `B0001-short-name.md`, written from the [template](_t
 | [B0012](B0012-window-title-empty-on-x11.md) | A window's title reads back empty on X11 | Fixed | Medium | M19 | Linux |
 | [B0013](B0013-macos-unmaximise-keeps-size.md) | On macOS a window does not go back to, or open at, its saved place | Fixed | Medium | M19 | macOS |
 | [B0014](B0014-macos-modal-window-shown-before-accesskit.md) | On macOS an owned window panics AccessKit when it opens | Fixed | Critical | M19 | macOS |
+| [B0015](B0015-click-lost-when-press-rebuilds.md) | A click is lost when the press builds the element again | Fixed | High | M25 | All |
 
 ## Status words
 

@@ -22,6 +22,28 @@ pub struct CommandInfo {
   pub enabled: bool,
   /// Its icon, shown wherever the command is (M17).
   pub icon: Option<dovetail_image::Icon>,
+  /// Whether it is on, for a toggle or a choice (M25), or `None` for a
+  /// plain command.
+  pub on: Option<bool>,
+  /// The group a choice is one of (M25).
+  pub group: Option<String>,
+}
+
+impl CommandInfo {
+  /// A command with this id that does not exist: shown greyed out under
+  /// its id.
+  pub fn missing(id: &str) -> CommandInfo {
+    CommandInfo {
+      id: id.to_owned(),
+      name: id.to_owned(),
+      shortcut: None,
+      default_shortcut: None,
+      enabled: false,
+      icon: None,
+      on: None,
+      group: None,
+    }
+  }
 }
 
 /// A shortcut that two commands would share.
@@ -48,6 +70,17 @@ impl std::fmt::Display for ShortcutConflict {
   }
 }
 
+/// What kind of command it is (M25).
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Kind {
+  /// Runs, and has no state.
+  Plain,
+  /// On or off.
+  Toggle,
+  /// One of a group, of which one is on.
+  Choice(String),
+}
+
 struct Entry {
   id: String,
   name: String,
@@ -55,8 +88,15 @@ struct Entry {
   default_shortcut: Option<Shortcut>,
   enabled: bool,
   enabled_when: Option<Rc<dyn Fn() -> bool>>,
-  run: Rc<dyn Fn()>,
+  /// What it does. A toggle is given its new state; others are given
+  /// true.
+  run: Rc<dyn Fn(bool)>,
   icon: Option<dovetail_image::Icon>,
+  kind: Kind,
+  /// On, for a toggle or a choice.
+  on: bool,
+  /// Whether it is on, read where it is shown, instead of `on`.
+  on_when: Option<Rc<dyn Fn() -> bool>>,
 }
 
 #[derive(Default)]
@@ -145,12 +185,75 @@ impl Commands {
     shortcut: Option<&str>,
     run: impl Fn() + 'static,
   ) -> Commands {
-    let id = id.into();
+    self.define_kind(
+      id.into(),
+      name.into(),
+      shortcut,
+      Kind::Plain,
+      Rc::new(move |_| run()),
+    )
+  }
+
+  /// Defines a command that is on or off, as View > Grid is (M25). It
+  /// starts off. Running it turns it over, then calls `run` with its new
+  /// state. Menus show a tick while it is on, and buttons stay pressed.
+  ///
+  /// # Panics
+  ///
+  /// If `shortcut` is not a shortcut, as for [`Commands::define`].
+  pub fn define_toggle(
+    self,
+    id: impl Into<String>,
+    name: impl Into<String>,
+    shortcut: Option<&str>,
+    run: impl Fn(bool) + 'static,
+  ) -> Commands {
+    self.define_kind(
+      id.into(),
+      name.into(),
+      shortcut,
+      Kind::Toggle,
+      Rc::new(run),
+    )
+  }
+
+  /// Defines a command that is one of `group`, of which one is on, as the
+  /// tools of a drawing program are (M25). The first command defined in a
+  /// group starts on. Running one makes it the one that is on, then calls
+  /// `run`. Menus show a dot by the one that is on.
+  ///
+  /// # Panics
+  ///
+  /// If `shortcut` is not a shortcut, as for [`Commands::define`].
+  pub fn define_choice(
+    self,
+    id: impl Into<String>,
+    group: impl Into<String>,
+    name: impl Into<String>,
+    shortcut: Option<&str>,
+    run: impl Fn() + 'static,
+  ) -> Commands {
+    self.define_kind(
+      id.into(),
+      name.into(),
+      shortcut,
+      Kind::Choice(group.into()),
+      Rc::new(move |_| run()),
+    )
+  }
+
+  fn define_kind(
+    self,
+    id: String,
+    name: String,
+    shortcut: Option<&str>,
+    kind: Kind,
+    run: Rc<dyn Fn(bool)>,
+  ) -> Commands {
     let default_shortcut = shortcut.map(|s| {
       Shortcut::parse(s)
         .unwrap_or_else(|e| panic!("the shortcut \"{s}\" for {id}: {e}"))
     });
-    let name = name.into();
     self.0.update(|RegistryCell(r)| {
       let mut shortcut = default_shortcut.clone();
       if let Some(s) = &shortcut
@@ -170,11 +273,26 @@ impl Commands {
         default_shortcut,
         enabled: true,
         enabled_when: None,
-        run: Rc::new(run),
+        run,
         icon: None,
+        on: false,
+        on_when: None,
+        kind,
       };
-      match r.entries.iter_mut().find(|e| e.id == id) {
-        Some(old) => *old = entry,
+      let mut entry = entry;
+      let old = r.entries.iter().position(|e| e.id == id);
+      if let Some(i) = old {
+        // Defined again, it keeps its state.
+        entry.on = r.entries[i].on && r.entries[i].kind == entry.kind;
+      } else if let Kind::Choice(group) = &entry.kind {
+        // The first of a group is on.
+        entry.on = !r
+          .entries
+          .iter()
+          .any(|e| matches!(&e.kind, Kind::Choice(g) if g == group));
+      }
+      match old {
+        Some(i) => r.entries[i] = entry,
         None => r.entries.push(entry),
       }
     });
@@ -253,16 +371,118 @@ impl Commands {
     if !self.is_enabled(id) {
       return false;
     }
-    let run = self
-      .0
-      .map(|RegistryCell(r)| r.get(id).map(|e| e.run.clone()));
-    match run {
-      Some(run) => {
-        run();
+    let found = self.0.map(|RegistryCell(r)| {
+      r.get(id).map(|e| (e.run.clone(), e.kind.clone()))
+    });
+    let Some((run, kind)) = found else {
+      return false;
+    };
+    let state = match kind {
+      Kind::Plain => true,
+      Kind::Toggle => {
+        let on = !self.is_on(id).unwrap_or(false);
+        self.set_on(id, on);
+        on
+      },
+      Kind::Choice(_) => {
+        self.set_on(id, true);
         true
       },
-      None => false,
+    };
+    run(state);
+    true
+  }
+
+  /// Turns a toggle on or off, or makes a choice the one of its group
+  /// that is on (M25), without running it. A choice turned off leaves its
+  /// group with none on. Plain commands have no state.
+  pub fn set_on(
+    self,
+    id: &str,
+    on: bool,
+  ) {
+    self.0.update(|RegistryCell(r)| {
+      let Some(kind) = r.get(id).map(|e| e.kind.clone()) else {
+        return;
+      };
+      match kind {
+        Kind::Plain => {},
+        Kind::Toggle => {
+          if let Some(e) = r.get_mut(id) {
+            e.on = on;
+          }
+        },
+        Kind::Choice(group) => {
+          for e in &mut r.entries {
+            if e.id == id {
+              e.on = on;
+            } else if on && matches!(&e.kind, Kind::Choice(g) if *g == group) {
+              e.on = false;
+            }
+          }
+        },
+      }
+    });
+  }
+
+  /// Makes a toggle or choice on only while `rule` returns true (M25), so
+  /// its state follows the application's own, as `enabled_when` does for
+  /// being enabled. The rule is read wherever the command is shown.
+  pub fn on_when(
+    self,
+    id: &str,
+    rule: impl Fn() -> bool + 'static,
+  ) -> Commands {
+    let rule: Rc<dyn Fn() -> bool> = Rc::new(rule);
+    self.0.update(|RegistryCell(r)| {
+      if let Some(e) = r.get_mut(id) {
+        e.on_when = Some(rule);
+      }
+    });
+    self
+  }
+
+  /// Whether a toggle or choice is on (M25), or `None` for a plain
+  /// command or one that does not exist.
+  pub fn is_on(
+    self,
+    id: &str,
+  ) -> Option<bool> {
+    let found = self.0.map(|RegistryCell(r)| {
+      r.get(id)
+        .map(|e| (e.kind.clone(), e.on, e.on_when.clone()))
+    })?;
+    // The rule runs outside the registry, as it may read other state.
+    match found {
+      (Kind::Plain, ..) => None,
+      (_, _, Some(rule)) => Some(rule()),
+      (_, on, None) => Some(on),
     }
+  }
+
+  /// The command of `group` that is on (M25), if any.
+  pub fn chosen(
+    self,
+    group: &str,
+  ) -> Option<String> {
+    self
+      .group(group)
+      .into_iter()
+      .find(|id| self.is_on(id) == Some(true))
+  }
+
+  /// The commands of `group`, in the order they were defined (M25).
+  pub fn group(
+    self,
+    group: &str,
+  ) -> Vec<String> {
+    self.0.map(|RegistryCell(r)| {
+      r.entries
+        .iter()
+        .filter(|e| matches!(&e.kind, Kind::Choice(g) if g == group))
+        .map(|e| e.id.clone())
+        .collect()
+    })
   }
 
   /// A command, as menus show it.
@@ -278,9 +498,18 @@ impl Commands {
         default_shortcut: e.default_shortcut.clone(),
         enabled: false,
         icon: e.icon.clone(),
+        on: None,
+        group: match &e.kind {
+          Kind::Choice(g) => Some(g.clone()),
+          _ => None,
+        },
       })
     })?;
-    Some(CommandInfo { enabled: self.is_enabled(id), ..info })
+    Some(CommandInfo {
+      enabled: self.is_enabled(id),
+      on: self.is_on(id),
+      ..info
+    })
   }
 
   /// Every command, in the order they were defined.
@@ -479,6 +708,79 @@ mod tests {
     // Disabled directly, the rule does not matter.
     commands.set_enabled("save", false);
     assert!(!commands.is_enabled("save"));
+  }
+
+  #[test]
+  fn toggles_turn_over_and_choices_keep_one_on() {
+    let seen = Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+    let s = seen.clone();
+    let (_tree, commands) = crate::owned(move || {
+      let s2 = s.clone();
+      Commands::new()
+        .define("plain", "Plain", None, || {})
+        .define_toggle("grid", "Grid", Some("Mod+G"), move |on| {
+          s.borrow_mut().push(format!("grid {on}"))
+        })
+        .define_choice("pen", "tools", "Pen", Some("P"), move || {
+          s2.borrow_mut().push("pen".into())
+        })
+        .define_choice("brush", "tools", "Brush", Some("B"), || {})
+        .define_choice("eraser", "tools", "Eraser", Some("E"), || {})
+    });
+    assert_eq!(commands.is_on("plain"), None);
+    assert_eq!(commands.is_on("grid"), Some(false));
+    assert_eq!(
+      commands.chosen("tools").as_deref(),
+      Some("pen"),
+      "the first"
+    );
+    assert_eq!(commands.group("tools"), ["pen", "brush", "eraser"]);
+
+    assert!(commands.run("grid"));
+    assert_eq!(commands.is_on("grid"), Some(true));
+    assert!(commands.handle_key(&ctrl('g')));
+    assert_eq!(commands.is_on("grid"), Some(false));
+    assert_eq!(*seen.borrow(), ["grid true", "grid false"]);
+
+    let b = KeyEvent::character('b');
+    assert!(commands.handle_key(&b), "a letter key with no modifier");
+    assert_eq!(commands.chosen("tools").as_deref(), Some("brush"));
+    assert_eq!(commands.is_on("pen"), Some(false));
+    let info = commands.info("brush").unwrap();
+    assert_eq!(
+      (info.on, info.group.as_deref()),
+      (Some(true), Some("tools"))
+    );
+    assert_eq!(commands.info("grid").unwrap().group, None);
+
+    commands.set_on("eraser", true);
+    assert_eq!(commands.chosen("tools").as_deref(), Some("eraser"));
+    commands.set_on("eraser", false);
+    assert_eq!(commands.chosen("tools"), None);
+    commands.run("pen");
+    assert_eq!(seen.borrow().last().map(String::as_str), Some("pen"));
+
+    // Defined again, a command keeps its state.
+    commands.set_on("grid", true);
+    let commands = commands.define_toggle("grid", "Grid", None, |_| {});
+    assert_eq!(commands.is_on("grid"), Some(true));
+  }
+
+  #[test]
+  fn a_rule_says_whether_a_toggle_is_on() {
+    let (_tree, (wrap, commands)) = crate::owned(|| {
+      let wrap = dovetail::create_signal(false);
+      let commands = Commands::new()
+        .define_toggle("wrap", "Wrap lines", None, move |on| wrap.set(on))
+        .on_when("wrap", move || wrap.get());
+      (wrap, commands)
+    });
+    assert_eq!(commands.is_on("wrap"), Some(false));
+    wrap.set(true);
+    assert_eq!(commands.is_on("wrap"), Some(true), "the rule follows");
+    commands.run("wrap");
+    assert!(!wrap.get(), "running turns it over from what the rule says");
+    assert_eq!(commands.info("wrap").unwrap().on, Some(false));
   }
 
   #[test]

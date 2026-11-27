@@ -9,7 +9,9 @@ use dovetail_macros::component;
 use dovetail_theme::theme;
 
 use crate::commands::{CommandInfo, Commands};
-use crate::views::{MenuItem, bar_colour, edge, menu_background, menu_row};
+use crate::views::{
+  MenuItem, bar_colour, edge, has_marks, menu_background, menu_row,
+};
 
 /// The positions of the items that can be chosen now.
 fn choosable(
@@ -64,6 +66,7 @@ fn row(
   i: usize,
   open: Signal<Option<(f32, f32)>>,
   highlight: Signal<Option<usize>>,
+  marks: bool,
 ) -> View {
   let id = match item {
     MenuItem::Separator => {
@@ -78,16 +81,11 @@ fn row(
     },
     MenuItem::Command(id) => id,
   };
-  let info = commands.info(id).unwrap_or(CommandInfo {
-    id: id.clone(),
-    name: id.clone(),
-    shortcut: None,
-    default_shortcut: None,
-    enabled: false,
-    icon: None,
-  });
+  let info = commands
+    .info(id)
+    .unwrap_or_else(|| CommandInfo::missing(id));
   let lit = highlight.get() == Some(i);
-  match menu_row(commands, &info, lit, None) {
+  match menu_row(commands, &info, lit, None, marks) {
     View::Element(e) if e.on_press.is_some() => {
       let mut e = (*e).clone();
       let run = e.on_press.take();
@@ -118,10 +116,11 @@ fn menu(
   open: Signal<Option<(f32, f32)>>,
   highlight: Signal<Option<usize>>,
 ) -> [View; 2] {
+  let marks = has_marks(commands, items);
   let rows: Vec<View> = items
     .iter()
     .enumerate()
-    .map(|(i, item)| row(commands, item, i, open, highlight))
+    .map(|(i, item)| row(commands, item, i, open, highlight, marks))
     .collect();
   let keys = {
     let items = items.to_vec();

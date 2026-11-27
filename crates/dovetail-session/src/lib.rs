@@ -117,8 +117,10 @@ pub struct Session {
   layout: Layout,
   /// The pointer, in logical pixels; NaN when it is outside.
   cursor: (f32, f32),
-  /// The handler under the pointer when it was pressed.
-  pressed: Option<Callback<()>>,
+  /// The element with a press handler under the pointer when it was
+  /// pressed. Kept by its key, not its handler: the element may be built
+  /// again, with a new handler, before the button is let go (B0015).
+  pressed: Option<BoxKey>,
   /// The element with keyboard focus.
   focus: Option<BoxKey>,
   /// Focus came from the keyboard, so the focus ring is shown.
@@ -540,7 +542,7 @@ impl Session {
       // A click focuses what it lands on, without showing the ring.
       self.set_focus(self.layout.focusable_at(x, y));
       self.focus_visible = false;
-      self.pressed = self.layout.hit_test(x, y).cloned();
+      self.pressed = self.layout.press_target_at(x, y);
     }
 
     let now = dovetail_core::now();
@@ -925,8 +927,17 @@ impl Session {
     let Some(pressed) = self.pressed.take() else {
       return;
     };
-    if self.layout.hit_test(self.cursor.0, self.cursor.1) == Some(&pressed) {
-      pressed.call(());
+    if self
+      .layout
+      .press_target_at(self.cursor.0, self.cursor.1)
+      .as_ref()
+      == Some(&pressed)
+      && let Some(on_press) = self
+        .layout
+        .element(&pressed)
+        .and_then(|e| e.on_press.clone())
+    {
+      on_press.call(());
     }
   }
 

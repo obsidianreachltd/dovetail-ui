@@ -661,6 +661,7 @@ dependencies = [
  "dovetail-image",
  "dovetail-layout",
  "dovetail-macros",
+ "dovetail-testing",
  "dovetail-theme",
 ]
 
@@ -933,6 +934,14 @@ dependencies = [
 name = "example-documents"
 version = "0.1.0"
 dependencies = [
+ "dovetail-ui",
+]
+
+[[package]]
+name = "example-drawing"
+version = "0.1.0"
+dependencies = [
+ "dovetail-testing",
  "dovetail-ui",
 ]
 

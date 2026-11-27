@@ -67,6 +67,7 @@ pub fn IconButton(
       ..Style::default()
     })
     .role(Role::Button)
+    .label(label.clone())
     .children([icon.picture().label(label).into()]);
   if enabled {
     button.focusable(true).on_press(on_click).into()

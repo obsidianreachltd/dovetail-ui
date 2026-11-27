@@ -596,14 +596,23 @@ impl Layout {
     x: f32,
     y: f32,
   ) -> Option<&Callback<()>> {
+    let key = self.press_target_at(x, y)?;
+    self.element(&key)?.on_press.as_ref()
+  }
+
+  /// The element whose press handler [`Layout::hit_test`] finds at the
+  /// point. Its key stays the same when the element is built again, as
+  /// when a press moves focus and the focus changes what is shown (B0015).
+  pub fn press_target_at(
+    &self,
+    x: f32,
+    y: f32,
+  ) -> Option<BoxKey> {
     let i = self.above(
       self.top_at(x, y)?,
       |b| matches!(&b.content, Content::Element(e) if e.on_press.is_some()),
     )?;
-    match &self.boxes[i].content {
-      Content::Element(e) => e.on_press.as_ref(),
-      Content::Text { .. } | Content::Picture { .. } => None,
-    }
+    Some(self.boxes[i].key.clone())
   }
 
   /// The topmost box under the point: the last one drawn there.

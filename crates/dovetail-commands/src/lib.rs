@@ -20,6 +20,7 @@ extern crate dovetail_core as dovetail;
 mod commands;
 mod context;
 mod history;
+mod palette;
 mod shortcut;
 mod views;
 mod window;
@@ -27,9 +28,11 @@ mod window;
 pub use commands::{CommandInfo, Commands, ShortcutConflict};
 pub use context::ContextMenu;
 pub use history::History;
+pub use palette::{LONG_PRESS, ToolPalette};
 pub use shortcut::{Shortcut, ShortcutError, ShortcutKey};
 pub use views::{
-  CommandButton, CommandScope, CommandSearch, Menu, MenuBar, MenuItem, Toolbar,
+  CommandButton, CommandGroup, CommandScope, CommandSearch, Menu, MenuBar,
+  MenuItem, Toolbar,
 };
 pub use window::{FULL_SCREEN, add_full_screen, full_screen_shortcut};
 

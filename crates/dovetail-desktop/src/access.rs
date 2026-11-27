@@ -110,6 +110,13 @@ fn ak_role(role: Role) -> AkRole {
     Role::Row => AkRole::Row,
     Role::Cell => AkRole::Cell,
     Role::ColumnHeader => AkRole::ColumnHeader,
+    Role::MenuItemCheckBox => AkRole::MenuItemCheckBox,
+    Role::MenuItemRadio => AkRole::MenuItemRadio,
+    Role::ColourWell => AkRole::ColorWell,
+    Role::DateInput => AkRole::DateInput,
+    Role::TimeInput => AkRole::TimeInput,
+    Role::Grid => AkRole::Grid,
+    Role::GridCell => AkRole::GridCell,
   }
 }
 
@@ -1221,5 +1228,78 @@ mod tests {
         Some("Close".to_owned())
       ]
     );
+  }
+
+  #[test]
+  fn m25_controls_have_their_roles_values_and_states() {
+    let mut w = Window::new(column([
+      with_role(Role::Button, "Bold")
+        .toggled(true)
+        .focusable(true)
+        .into(),
+      with_role(Role::Menu, "View")
+        .children([
+          with_role(Role::MenuItemCheckBox, "Grid")
+            .toggled(true)
+            .into(),
+          with_role(Role::MenuItemRadio, "Pen")
+            .toggled(false)
+            .into(),
+        ])
+        .into(),
+      with_role(Role::ColourWell, "Fill")
+        .text_value("#0080ff")
+        .focusable(true)
+        .into(),
+      with_role(Role::DateInput, "Start")
+        .text_value("2026-01-20")
+        .into(),
+      with_role(Role::TimeInput, "Alarm")
+        .text_value("09:30")
+        .focusable(true)
+        .into(),
+      with_role(Role::Grid, "Calendar")
+        .table_size(6, 7)
+        .focusable(true)
+        .children([with_role(Role::Row, "")
+          .children([
+            with_role(Role::GridCell, "Monday 12 January 2026")
+              .selected(false)
+              .into(),
+            with_role(Role::GridCell, "Tuesday 13 January 2026")
+              .selected(true)
+              .into(),
+          ])
+          .into()])
+        .into(),
+    ]));
+    let update = w.update(None);
+    let one = |role| {
+      let found = find(&update, role);
+      assert_eq!(found.len(), 1, "one {role:?}");
+      found[0].1.clone()
+    };
+    let bold = one(AkRole::Button);
+    assert_eq!(
+      bold.toggled(),
+      Some(Toggled::True),
+      "a pressed toggle button"
+    );
+    assert_eq!(one(AkRole::MenuItemCheckBox).toggled(), Some(Toggled::True));
+    assert_eq!(one(AkRole::MenuItemRadio).toggled(), Some(Toggled::False));
+    let well = one(AkRole::ColorWell);
+    assert_eq!(
+      (well.label(), well.value()),
+      (Some("Fill"), Some("#0080ff"))
+    );
+    assert_eq!(one(AkRole::DateInput).value(), Some("2026-01-20"));
+    assert_eq!(one(AkRole::TimeInput).value(), Some("09:30"));
+    let grid = one(AkRole::Grid);
+    assert_eq!((grid.row_count(), grid.column_count()), (Some(6), Some(7)));
+    let days: Vec<Option<bool>> = find(&update, AkRole::GridCell)
+      .iter()
+      .map(|(_, n)| n.is_selected())
+      .collect();
+    assert_eq!(days, [Some(false), Some(true)]);
   }
 }

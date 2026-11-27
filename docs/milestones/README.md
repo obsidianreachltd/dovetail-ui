@@ -34,6 +34,8 @@ Use the `_template.md` file in each folder for a new document.
 | M20 | Testing tools | Done | M07, M15 | [Overview](overviews/M20-testing-tools.md) | [Plan](plans/M20-testing-tools.md) | [Report](reports/M20-testing-tools.md) | 6/6 |
 | M21 | Files from the system | Not started | M11, M19 | [Overview](overviews/M21-files-from-the-system.md) | — | — | 0/5 |
 | M22 | Localisation | Not started | M13, M15, M16 | [Overview](overviews/M22-localisation.md) | — | — | 0/6 |
+| M25 | Pickers and tool palettes | In progress | M10, M15, M17 | [Overview](overviews/M25-pickers-and-tool-palettes.md) | [Plan](plans/M25-pickers-and-tool-palettes.md) | — | 7/7 |
+| M26 | Rich text | Planned | M08, M13, M15, M25 | [Overview](overviews/M26-rich-text.md) | [Plan](plans/M26-rich-text.md) | — | 0/6 |
 | R01 | First release | Not started | M05, M07, M09, M10, M11, M13, M14, M15, M16, M17, M18, M19, M20, M21, M22 | [Overview](overviews/R01-first-release.md) | — | — | 0/6 |
 | M23 | Notifications and the tray | Not started | R01 | [Overview](overviews/M23-notifications-and-tray.md) | — | — | 0/5 |
 | M24 | Printing | Not started | R01 | [Overview](overviews/M24-printing.md) | — | — | 0/5 |
@@ -43,7 +45,7 @@ There are two kinds of milestone:
 - **Mnn** milestones build part of the framework.
 - **Rnn** milestones are releases. They gather finished milestones, package them and publish them. R01, the first release, was called M12 until 2026-11-23. It comes after more feature milestones than it did then, so new Mnn milestones may be added before it.
 
-IDs are not the order of work: "Depends on" is. M13 was split from M06 on 2026-11-20 and comes after it, before the first release. M18 to M24 were added on 2026-11-25: M18 to M22 come before the first release, and M23 and M24 after it. On the same day CI first passed on all three systems, which finished M00 and M04 and met five of M01's six criteria. M01's last one, moving between displays with different scales, needs a person.
+IDs are not the order of work: "Depends on" is. M13 was split from M06 on 2026-11-20 and comes after it, before the first release. M18 to M24 were added on 2026-11-25: M18 to M22 come before the first release, and M23 and M24 after it. On the same day CI first passed on all three systems, which finished M00 and M04 and met five of M01's six criteria. M01's last one, moving between displays with different scales, needs a person. M25 and M26 were added on 2026-11-27. They can be done before R01, but R01 does not wait for them.
 
 ## Status words
 

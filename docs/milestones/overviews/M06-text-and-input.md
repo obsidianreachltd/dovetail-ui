@@ -27,7 +27,7 @@ Professional applications depend on text input that behaves like the platform. T
 ## What it leaves out
 
 - Accessibility of text fields ([M07](M07-accessibility.md)).
-- Rich text styles (after the first release).
+- Rich text styles: [M26](M26-rich-text.md).
 
 ## Done when
 

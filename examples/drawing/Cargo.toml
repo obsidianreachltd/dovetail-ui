@@ -1,0 +1,21 @@
+[package]
+name = "example-drawing"
+description = "M25 example: a small drawing tool with a tool palette in a dock panel, toggle commands, and menus with ticks."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "drawing"
+path = "src/main.rs"
+
+[dependencies]
+dovetail-ui.workspace = true
+# The self-test drives a real window (M20).
+dovetail-testing = { workspace = true, features = ["windows"] }
+
+[lints]
+workspace = true
