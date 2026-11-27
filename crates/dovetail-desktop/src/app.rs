@@ -500,6 +500,10 @@ impl Shell {
   ) -> Result<WindowId, Error> {
     // Hidden until AccessKit's adapter is in place, as it requires.
     let title = options.title.clone();
+    let owner = options
+      .owner
+      .and_then(|o| self.windows.get(&o.0))
+      .map(|e| Arc::clone(&e.window));
     let id = self.open_window(event_loop, options, false)?;
     let entry = self
       .windows
@@ -511,6 +515,11 @@ impl Shell {
       self.proxy.clone(),
     );
     entry.window.set_visible(true);
+    // After the adapter: on macOS a child window is shown as it is added
+    // (B0014).
+    if let Some(owner) = &owner {
+      crate::platform::make_owned(&entry.window, owner);
+    }
     // The system's settings, read with its appearance (M18).
     let settings = Settings::from(dovetail_core::system_settings());
     let mut session =
@@ -1311,7 +1320,9 @@ impl Shell {
     let check_place = manage::PUT_BACK_NORMAL
       && options.state == WindowState::Normal
       && asked_position.is_some();
-    if let Some(owner) = &owner {
+    // On macOS this shows the window, so a hidden one is given to its owner
+    // when it is shown (`open_ui`).
+    if visible && let Some(owner) = &owner {
       crate::platform::make_owned(&window, owner);
     }
     let size = physical(window.inner_size());
