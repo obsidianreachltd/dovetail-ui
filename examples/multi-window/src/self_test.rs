@@ -133,17 +133,20 @@ pub fn run() -> ExitCode {
   });
   t.find(main, text("Main window: Maximised"));
   t.set_state(main, WindowState::Normal);
-  t.wait_until("the main window's own place", move |t| {
-    let now = t.place(main);
-    near(now.size, main_was.size)
-      && match (now.position, main_was.position) {
-        (Some(a), Some(b)) => near(a, b),
-        _ => true,
-      }
-  });
+  t.wait_until(
+    &format!("the main window's own place, {main_was:?}"),
+    move |t| {
+      let now = t.place(main);
+      near(now.size, main_was.size)
+        && match (now.position, main_was.position) {
+          (Some(a), Some(b)) => near(a, b),
+          _ => true,
+        }
+    },
+  );
   t.click(main, button("New document"));
   let one = t.window_titled("Document 1");
-  t.wait_until("document 1's own place", move |t| {
+  t.wait_until(&format!("document 1's own place, {one_was:?}"), move |t| {
     let now = t.place(one);
     near(now.size, one_was.size)
       && match (now.position, one_was.position) {

@@ -129,7 +129,7 @@ Give applications full control of their top-level windows: several of them, each
   - CI found that a state asked for can be missed: under Openbox when a window opens maximised, and on macOS when a window leaves full screen just after entering it. The desktop now asks again, every 300 ms up to eight times, until the window shows the state. On macOS it reads the real full-screen state from the `NSWindow`, and leaves full screen itself when AppKit refused to.
   - [B0010](../../bugs/B0010-docking-float-window-stays-open.md), fixed: the docking self-test checked a step only at a frame it had asked for, and a floating window now closes just after the frame that docks its panel. It now looks again until the check passes.
   - [B0012](../../bugs/B0012-window-title-empty-on-x11.md), fixed: winit cannot read a window's title back on X11, so the desktop keeps each window's title itself.
-  - [B0013](../../bugs/B0013-macos-unmaximise-keeps-size.md), waiting for CI: on macOS a window opened maximised did not go back to its place. The desktop now remembers each window's normal place, and on macOS puts it back there when AppKit does not.
+  - [B0013](../../bugs/B0013-macos-unmaximise-keeps-size.md), waiting for CI: on macOS a window opened maximised did not go back to its place, and a document window did not open at its place. The desktop now remembers each window's normal place, and on macOS puts a window there when AppKit does not, when it opens and when it leaves maximised.
 
 ## Risks
 

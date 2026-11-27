@@ -105,11 +105,13 @@ impl NormalPlace {
   }
 }
 
-/// Whether the desktop puts a window back at its normal place itself when
-/// it leaves maximised. On macOS a resizable window unzooms to where AppKit
-/// remembers, which can be its zoomed frame when it opened zoomed; winit
-/// then sees it as normal already. Elsewhere the system does it.
-const PUT_BACK_NORMAL: bool = cfg!(target_os = "macos");
+/// Whether the desktop puts a window at its normal place itself, when it
+/// opens and when it leaves maximised, if the system has not. On macOS a
+/// resizable window unzooms to where AppKit remembers, which can be its
+/// zoomed frame when it opened zoomed, and winit then sees it as normal
+/// already; and a window has been seen to open away from where it was
+/// asked to (B0013). Elsewhere the system does it.
+pub(crate) const PUT_BACK_NORMAL: bool = cfg!(target_os = "macos");
 
 /// How long to wait before asking again for a window's state.
 const ASK_AGAIN: Duration = Duration::from_millis(300);

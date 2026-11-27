@@ -1306,6 +1306,11 @@ impl Shell {
       window.set_minimized(true);
     }
     let window_scale = window.scale_factor();
+    // On macOS a window opened at a place is checked to be there, and put
+    // there if it is not (B0013).
+    let check_place = manage::PUT_BACK_NORMAL
+      && options.state == WindowState::Normal
+      && asked_position.is_some();
     if let Some(owner) = &owner {
       crate::platform::make_owned(&window, owner);
     }
@@ -1343,18 +1348,20 @@ impl Shell {
         focus_alt_until: None,
         dev_name,
         normal: std::cell::Cell::new(
-          (options.state != WindowState::Normal).then(|| manage::NormalPlace {
-            position: asked_position,
-            size: winit::dpi::LogicalSize::new(
-              options.size.width,
-              options.size.height,
-            )
-            .to_physical(window_scale),
+          (options.state != WindowState::Normal || check_place).then(|| {
+            manage::NormalPlace {
+              position: asked_position,
+              size: winit::dpi::LogicalSize::new(
+                options.size.width,
+                options.size.height,
+              )
+              .to_physical(window_scale),
+            }
           }),
         ),
         title: options.title,
         wanted: std::cell::Cell::new(
-          (options.state != WindowState::Normal)
+          (options.state != WindowState::Normal || check_place)
             .then(|| manage::Wanted::new(options.state)),
         ),
       },

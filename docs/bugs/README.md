@@ -18,7 +18,7 @@ Each bug has its own file, `B0001-short-name.md`, written from the [template](_t
 | [B0010](B0010-docking-float-window-stays-open.md) | The docking self-test's drag-back step sometimes times out | Fixed | Low | M19 | All |
 | [B0011](B0011-motion-still-spinner-extra-frame.md) | The motion self-test sometimes sees one frame while the spinner should be still | Open | Low | M18 | Windows |
 | [B0012](B0012-window-title-empty-on-x11.md) | A window's title reads back empty on X11 | Fixed | Medium | M19 | Linux |
-| [B0013](B0013-macos-unmaximise-keeps-size.md) | On macOS a window opened maximised does not go back to its place | In progress | Medium | M19 | macOS |
+| [B0013](B0013-macos-unmaximise-keeps-size.md) | On macOS a window does not go back to, or open at, its saved place | In progress | Medium | M19 | macOS |
 
 ## Status words
 

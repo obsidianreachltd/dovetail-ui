@@ -648,15 +648,20 @@ impl TestWindows {
         .into_iter()
         .map(|id| {
           let s = cx.window_stats(id).unwrap_or_default();
+          // Where it is, and in what state, for waits on places (M19).
+          let place = cx.window_place(id);
           format!(
             "  {:?}: {} redraw requests, {} frames shown, {} skipped, \
-             hidden {:?}, focused {:?}",
+             hidden {:?}, focused {:?}, at {:?}, size {:?}, {:?}",
             cx.window_title(id).unwrap_or_default(),
             s.redraws,
             s.presented,
             s.skipped,
             s.occluded,
-            s.focused
+            s.focused,
+            place.and_then(|p| p.position),
+            place.map(|p| p.size),
+            cx.window_state(id)
           )
         })
         .collect::<Vec<_>>()
