@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use dovetail_core::{
   Element, ImeEvent, KeyCode, KeyEvent, Modifiers, NamedKey, PointerButton,
-  PointerKind, View, WindowPlace,
+  PointerKind, View, WindowLimits, WindowPlace, WindowState,
 };
 use dovetail_layout::{LayoutBox, Rect};
 use dovetail_render::{
@@ -23,8 +23,13 @@ use winit::keyboard::{Key as WinitKey, NamedKey as WinitNamedKey};
 use winit::window::{Window, WindowAttributes};
 
 mod lifecycle;
+mod manage;
 mod multi;
 mod pumped;
+mod root;
+
+pub use manage::ExitPolicy;
+pub use root::{run_windows, run_windows_with};
 
 pub use pumped::Pumped;
 
@@ -84,6 +89,15 @@ pub struct WindowOptions {
   /// Where the window's top-left corner starts on the screen, frame
   /// included, in logical pixels. Without it the system chooses.
   pub position: Option<(f32, f32)>,
+  /// The sizes it keeps to, and whether the user can resize it (M19).
+  pub limits: WindowLimits,
+  /// The state it opens in (M19).
+  pub state: WindowState,
+  /// The window it belongs to, which keeps it in front (M19).
+  pub owner: Option<WindowId>,
+  /// Whether it blocks its owner's input until it closes (M19). It opens
+  /// centred on its owner.
+  pub modal: bool,
 }
 
 impl WindowOptions {
@@ -93,7 +107,41 @@ impl WindowOptions {
       title: title.into(),
       size: LogicalSize::new(800.0, 600.0),
       position: None,
+      limits: WindowLimits::default(),
+      state: WindowState::Normal,
+      owner: None,
+      modal: false,
     }
+  }
+
+  /// Makes it belong to `owner`, and, with `modal`, block its owner's
+  /// input until it closes.
+  pub fn with_owner(
+    mut self,
+    owner: WindowId,
+    modal: bool,
+  ) -> Self {
+    self.owner = Some(owner);
+    self.modal = modal;
+    self
+  }
+
+  /// Sets the sizes it keeps to, and whether it can be resized.
+  pub fn with_limits(
+    mut self,
+    limits: WindowLimits,
+  ) -> Self {
+    self.limits = limits;
+    self
+  }
+
+  /// Sets the state it opens in.
+  pub fn with_state(
+    mut self,
+    state: WindowState,
+  ) -> Self {
+    self.state = state;
+    self
   }
 
   /// Sets where the window's top-left corner starts on the screen.
@@ -192,6 +240,25 @@ pub trait Application: 'static {
     cx: &mut Context<'_>,
   ) {
     let _ = cx;
+  }
+
+  /// The user clicked the application's Dock icon while no window was
+  /// open (macOS, M19).
+  fn reopen(
+    &mut self,
+    cx: &mut Context<'_>,
+  ) {
+    let _ = cx;
+  }
+
+  /// A window's state changed, as when the user maximised it (M19).
+  fn state_changed(
+    &mut self,
+    cx: &mut Context<'_>,
+    window: WindowId,
+    state: WindowState,
+  ) {
+    let _ = (cx, window, state);
   }
 
   /// Called when the user asks to close a window. By default it closes.
@@ -330,12 +397,82 @@ impl Context<'_> {
 
   /// Brings a window to the front and gives it the keyboard.
   pub fn focus_window(
-    &self,
+    &mut self,
     window: WindowId,
   ) {
-    if let Some(entry) = self.shell.windows.get(&window.0) {
-      entry.window.focus_window();
+    self.shell.bring_to_front(window.0);
+  }
+
+  /// True when a modal window blocks `window`, so input sent to it here
+  /// is refused, as the system's would be. With `press`, the modal window
+  /// comes to the front, as a press on its owner brings it (M19).
+  fn refused(
+    &mut self,
+    window: WindowId,
+    press: bool,
+  ) -> bool {
+    match self.shell.blocker(window.0) {
+      Some(modal) => {
+        if press {
+          self.shell.bring_to_front(modal);
+        }
+        true
+      },
+      None => false,
     }
+  }
+
+  /// Moves a window's top-left corner, frame included, to `position` in
+  /// logical pixels at the scale of the monitor it lands on, as windows
+  /// report their places (M19). Wayland ignores this.
+  pub fn set_window_position(
+    &self,
+    window: WindowId,
+    (x, y): (f32, f32),
+  ) {
+    let Some(entry) = self.shell.windows.get(&window.0) else {
+      return;
+    };
+    let monitors = manage::read_monitors(self.event_loop);
+    let scale = monitors
+      .iter()
+      .find(|m| m.bounds.contains((x * m.scale, y * m.scale)))
+      .map_or(entry.window.scale_factor() as f32, |m| m.scale);
+    entry
+      .window
+      .set_outer_position(winit::dpi::PhysicalPosition::new(
+        (x * scale).round() as i32,
+        (y * scale).round() as i32,
+      ));
+  }
+
+  /// True when no windows are open and the exit policy ends the
+  /// application after its last window: what a program that is not a test
+  /// would do now (M19).
+  pub fn would_end(&self) -> bool {
+    self.shell.windows.is_empty()
+      && self.shell.exit_policy == ExitPolicy::AfterLastWindow
+  }
+
+  /// The modal window that blocks a window's input, if one does (M19).
+  pub fn blocked_by(
+    &self,
+    window: WindowId,
+  ) -> Option<WindowId> {
+    self.shell.blocker(window.0).map(WindowId)
+  }
+
+  /// The windows a component opened, with the ids components know them
+  /// by (M19).
+  pub fn hosted_windows(&self) -> Vec<(WindowId, dovetail_core::HostWindow)> {
+    let mut list: Vec<_> = self
+      .shell
+      .windows
+      .iter()
+      .filter_map(|(w, e)| Some((WindowId(*w), e.hosted.as_ref()?.id)))
+      .collect();
+    list.sort_by_key(|(_, h)| h.0);
+    list
   }
 
   /// True while something is being dragged (M10).
@@ -506,6 +643,9 @@ impl Context<'_> {
       self.shell.cancel_drag();
       return true;
     }
+    if self.refused(window, false) {
+      return false;
+    }
     let Some(entry) = self.shell.windows.get_mut(&window.0) else {
       return false;
     };
@@ -529,6 +669,9 @@ impl Context<'_> {
   ) {
     let none = Modifiers::default();
     self.shell.pointer_moved(window.0, (x, y), none);
+    if self.refused(window, true) {
+      return;
+    }
     self
       .shell
       .pointer_pressed(window.0, none, PointerButton::Primary);
@@ -547,6 +690,9 @@ impl Context<'_> {
     (x, y): (f32, f32),
     (dx, dy): (f32, f32),
   ) -> bool {
+    if self.refused(window, false) {
+      return false;
+    }
     let Some(entry) = self.shell.windows.get_mut(&window.0) else {
       return false;
     };
@@ -593,6 +739,9 @@ impl Context<'_> {
     window: WindowId,
     event: ImeEvent,
   ) -> bool {
+    if self.refused(window, false) {
+      return false;
+    }
     let Some(entry) = self.shell.windows.get_mut(&window.0) else {
       return false;
     };
@@ -674,6 +823,7 @@ impl Context<'_> {
       return;
     }
     match kind {
+      PointerKind::Down if self.refused(window, true) => {},
       PointerKind::Down => {
         if let Some(ui) = self
           .shell
@@ -723,10 +873,12 @@ impl Context<'_> {
     window: WindowId,
   ) {
     self.shell.windows.remove(&window.0);
-    if self.shell.primary == Some(window.0) {
+    // Without a root, the first window's own windows close with it. With
+    // one, each window closes when its component goes (M19).
+    if self.shell.primary == Some(window.0) && self.shell.root.is_none() {
       self.shell.close_hosted();
     }
-    if self.shell.windows.is_empty() && !self.shell.pumped {
+    if self.shell.should_end() {
       self.event_loop.exit();
     }
   }
@@ -739,6 +891,10 @@ impl Context<'_> {
     &mut self,
     window: WindowId,
   ) {
+    // A window a modal window blocks cannot be closed (M19).
+    if self.refused(window, true) {
+      return;
+    }
     if self.shell.ask_guard(window.0) {
       return;
     }
@@ -764,20 +920,53 @@ impl Context<'_> {
     }
   }
 
-  /// Asks for a window's drawing area to have a new size. The platform may
-  /// refuse or adjust it; [`Application::resized`] reports the result.
+  /// Asks for a window's drawing area to have a new size, kept within its
+  /// limits (M19). The platform may refuse or adjust it;
+  /// [`Application::resized`] reports the result.
   pub fn set_window_size(
     &self,
     window: WindowId,
     size: LogicalSize,
   ) {
     if let Some(entry) = self.shell.windows.get(&window.0) {
-      let _ = entry
-        .window
-        .request_inner_size(winit::dpi::LogicalSize::new(
-          size.width,
-          size.height,
-        ));
+      let size = entry
+        .limits
+        .clamp((size.width as f32, size.height as f32));
+      let _ = entry.window.request_inner_size(logical(size));
+    }
+  }
+
+  /// The state a window is in now (M19). Where the system does not say
+  /// whether a window is minimised, as on Wayland, it is not.
+  pub fn window_state(
+    &self,
+    window: WindowId,
+  ) -> Option<WindowState> {
+    Some(state_of(&self.shell.windows.get(&window.0)?.window))
+  }
+
+  /// Puts a window in a state: normal, maximised, minimised or full
+  /// screen (M19). The system may refuse, as Wayland refuses to minimise.
+  pub fn set_window_state(
+    &self,
+    window: WindowId,
+    state: WindowState,
+  ) {
+    if let Some(entry) = self.shell.windows.get(&window.0) {
+      apply_state(&entry.window, state);
+    }
+  }
+
+  /// Changes the sizes a window keeps to, and whether it can be resized
+  /// (M19).
+  pub fn set_window_limits(
+    &mut self,
+    window: WindowId,
+    limits: WindowLimits,
+  ) {
+    if let Some(entry) = self.shell.windows.get_mut(&window.0) {
+      apply_limits(&entry.window, limits);
+      entry.limits = limits;
     }
   }
 
@@ -856,6 +1045,19 @@ struct WindowEntry {
   hosted: Option<multi::Hosted>,
   /// What the window has received, for tests (M20).
   stats: WindowStats,
+  /// Its state when last looked at (M19).
+  state: WindowState,
+  /// The sizes it keeps to (M19).
+  limits: WindowLimits,
+  /// The window it belongs to (M19).
+  owner: Option<winit::window::WindowId>,
+  /// Whether it blocks its owner (M19).
+  modal: bool,
+  /// Until when Alt key events are ignored, after the program brought it
+  /// to the front (M19).
+  focus_alt_until: Option<Instant>,
+  /// The name `dovetail dev` keeps its place under (M19).
+  dev_name: Option<String>,
 }
 
 /// What a window has received from the system and the GPU, so a test that
@@ -975,6 +1177,11 @@ struct Shell {
   /// The loop is pumped by a test (`Pumped`), which ends it itself:
   /// closing the last window does not.
   pumped: bool,
+  /// Whether the application ends after its last window (M19).
+  exit_policy: ExitPolicy,
+  /// The application's root, a tree with no window, when it has one
+  /// (M19, `run_windows`).
+  root: Option<Session>,
 }
 
 impl Shell {
@@ -997,9 +1204,23 @@ impl Shell {
   fn open_window(
     &mut self,
     event_loop: &ActiveEventLoop,
-    options: WindowOptions,
+    mut options: WindowOptions,
     visible: bool,
   ) -> Result<WindowId, Error> {
+    // Under `dovetail dev`, each window opens where it was before the
+    // restart (M19).
+    let dev_name = self.dev.next_name();
+    if let Some(name) = &dev_name
+      && let Some((place, state)) =
+        self
+          .dev
+          .restore(name, &dovetail_core::monitors(), options.limits)
+    {
+      options.size =
+        LogicalSize::new(f64::from(place.size.0), f64::from(place.size.1));
+      options.position = place.position;
+      options.state = state;
+    }
     let mut attributes = WindowAttributes::default()
       .with_visible(visible)
       .with_title(options.title)
@@ -1008,22 +1229,71 @@ impl Shell {
         options.size.height,
       ));
     let first = self.primary.is_none();
-    if let Some((x, y)) = options.position {
-      attributes = attributes.with_position(winit::dpi::LogicalPosition::new(
-        f64::from(x),
-        f64::from(y),
-      ));
+    if let Some(min) = options.limits.min_size {
+      attributes = attributes.with_min_inner_size(logical(min));
     }
-    if first && let Some(p) = self.dev.placement() {
+    if let Some(max) = options.limits.max_size {
+      attributes = attributes.with_max_inner_size(logical(max));
+    }
+    attributes = attributes
+      .with_resizable(options.limits.resizable)
+      .with_maximized(options.state == WindowState::Maximised);
+    if options.state == WindowState::FullScreen {
       attributes = attributes
-        .with_position(winit::dpi::PhysicalPosition::new(p.x, p.y))
-        .with_inner_size(winit::dpi::PhysicalSize::new(p.width, p.height));
+        .with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+    }
+    // A position in logical pixels is at the scale of the monitor it is
+    // on, as windows report theirs (M19).
+    if let Some((x, y)) = options.position {
+      let monitors = manage::read_monitors(event_loop);
+      attributes = match monitors
+        .iter()
+        .find(|m| m.bounds.contains((x * m.scale, y * m.scale)))
+      {
+        Some(m) => attributes.with_position(winit::dpi::PhysicalPosition::new(
+          f64::from(x * m.scale).round() as i32,
+          f64::from(y * m.scale).round() as i32,
+        )),
+        None => attributes.with_position(winit::dpi::LogicalPosition::new(
+          f64::from(x),
+          f64::from(y),
+        )),
+      };
+    }
+    // A window with an owner belongs to it; a modal one opens centred on
+    // it (M19).
+    let owner = options
+      .owner
+      .and_then(|o| self.windows.get(&o.0))
+      .map(|e| Arc::clone(&e.window));
+    if let Some(owner) = &owner {
+      attributes = owned_attributes(attributes, owner, options.modal);
+      if options.modal
+        && options.position.is_none()
+        && let Ok(at) = owner.outer_position()
+      {
+        let size = owner.outer_size();
+        let scale = owner.scale_factor();
+        let w = f64::from(options.size.width as f32) * scale;
+        let h = (f64::from(options.size.height as f32) + 30.0) * scale;
+        attributes =
+          attributes.with_position(winit::dpi::PhysicalPosition::new(
+            at.x + ((f64::from(size.width) - w) / 2.0) as i32,
+            at.y + ((f64::from(size.height) - h) / 2.0) as i32,
+          ));
+      }
     }
     let window = Arc::new(
       event_loop
         .create_window(attributes)
         .map_err(Error::Window)?,
     );
+    if options.state == WindowState::Minimised {
+      window.set_minimized(true);
+    }
+    if let Some(owner) = &owner {
+      crate::platform::make_owned(&window, owner);
+    }
     let size = physical(window.inner_size());
 
     let surface = match &self.gpu {
@@ -1051,8 +1321,15 @@ impl Shell {
         ui: None,
         hosted: None,
         stats: WindowStats::default(),
+        state: options.state,
+        limits: options.limits,
+        owner: owner.as_ref().map(|o| o.id()),
+        modal: options.modal && owner.is_some(),
+        focus_alt_until: None,
+        dev_name,
       },
     );
+    self.refresh_monitors(event_loop);
     Ok(WindowId(id))
   }
 
@@ -1084,6 +1361,12 @@ impl Shell {
       Arc<Window>,
       Option<UiWindow>,
       Option<multi::Hosted>,
+      (
+        WindowLimits,
+        Option<winit::window::WindowId>,
+        bool,
+        Option<String>,
+      ),
     );
     let windows: Vec<Kept> = self
       .windows
@@ -1093,7 +1376,13 @@ impl Shell {
         if let Some(ui) = &mut ui {
           ui.canvas = None;
         }
-        (id, entry.window, ui, entry.hosted)
+        (
+          id,
+          entry.window,
+          ui,
+          entry.hosted,
+          (entry.limits, entry.owner, entry.modal, entry.dev_name),
+        )
       })
       .collect();
 
@@ -1103,7 +1392,7 @@ impl Shell {
 
     // 3. Make a new GPU with the first window, and surfaces for the others.
     let mut new_gpu: Option<Gpu> = None;
-    for (id, window, ui, hosted) in windows {
+    for (id, window, ui, hosted, (limits, owner, modal, dev_name)) in windows {
       let size = physical(window.inner_size());
       let surface = match &new_gpu {
         Some(gpu) => WindowSurface::new(gpu, Arc::clone(&window), size),
@@ -1122,6 +1411,7 @@ impl Shell {
       match surface {
         Ok(surface) => {
           window.request_redraw();
+          let state = state_of(&window);
           self.windows.insert(
             id,
             WindowEntry {
@@ -1130,6 +1420,12 @@ impl Shell {
               ui,
               hosted,
               stats: WindowStats::default(),
+              state,
+              limits,
+              owner,
+              modal,
+              focus_alt_until: None,
+              dev_name,
             },
           );
         },
@@ -1157,6 +1453,96 @@ impl Shell {
   }
 }
 
+/// Window attributes that make a new window belong to `owner` (M19): an
+/// owned window on Windows, and the dialog window type on X11 for a modal
+/// one. macOS and X11 are told more once the window is made
+/// (`platform::make_owned`).
+fn owned_attributes(
+  attributes: WindowAttributes,
+  owner: &Window,
+  modal: bool,
+) -> WindowAttributes {
+  #[cfg(windows)]
+  {
+    use winit::platform::windows::WindowAttributesExtWindows;
+    let _ = modal;
+    match lifecycle::native_handle(owner) {
+      0 => attributes,
+      hwnd => attributes.with_owner_window(hwnd),
+    }
+  }
+  #[cfg(all(unix, not(target_os = "macos")))]
+  {
+    use winit::platform::x11::{WindowAttributesExtX11, WindowType};
+    let _ = owner;
+    if modal {
+      attributes.with_x11_window_type(vec![WindowType::Dialog])
+    } else {
+      attributes
+    }
+  }
+  #[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
+  {
+    let _ = (owner, modal);
+    attributes
+  }
+}
+
+/// A size in logical pixels, as winit takes it.
+fn logical((w, h): (f32, f32)) -> winit::dpi::LogicalSize<f64> {
+  winit::dpi::LogicalSize::new(f64::from(w), f64::from(h))
+}
+
+/// The state a window is in, as winit says (M19).
+pub(crate) fn state_of(window: &Window) -> WindowState {
+  if window.fullscreen().is_some() {
+    WindowState::FullScreen
+  } else if window.is_minimized() == Some(true) {
+    WindowState::Minimised
+  } else if window.is_maximized() {
+    WindowState::Maximised
+  } else {
+    WindowState::Normal
+  }
+}
+
+/// Puts a window in `state` with winit (M19).
+pub(crate) fn apply_state(
+  window: &Window,
+  state: WindowState,
+) {
+  if state_of(window) == state {
+    return;
+  }
+  if state != WindowState::FullScreen && window.fullscreen().is_some() {
+    window.set_fullscreen(None);
+  }
+  match state {
+    WindowState::FullScreen => {
+      window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)))
+    },
+    WindowState::Minimised => window.set_minimized(true),
+    WindowState::Maximised => {
+      window.set_minimized(false);
+      window.set_maximized(true);
+    },
+    WindowState::Normal => {
+      window.set_minimized(false);
+      window.set_maximized(false);
+    },
+  }
+}
+
+/// Gives a window its size limits with winit (M19).
+pub(crate) fn apply_limits(
+  window: &Window,
+  limits: WindowLimits,
+) {
+  window.set_min_inner_size(limits.min_size.map(logical));
+  window.set_max_inner_size(limits.max_size.map(logical));
+  window.set_resizable(limits.resizable);
+}
+
 fn physical(size: winit::dpi::PhysicalSize<u32>) -> PhysicalSize {
   PhysicalSize { width: size.width, height: size.height }
 }
@@ -1167,6 +1553,8 @@ pub(crate) enum UserEvent {
   AccessKit(accesskit_winit::Event),
   /// A task has progress or an end to give to its callbacks (M11).
   Tasks,
+  /// The user clicked the Dock icon with no window open (macOS, M19).
+  Reopen,
 }
 
 impl From<accesskit_winit::Event> for UserEvent {
@@ -1253,15 +1641,40 @@ impl<A: Application> Runner<A> {
     }
   }
 
-  /// Saves the first window's place for `dovetail dev`.
+  /// Tells the component that opened window `id`, and the application,
+  /// when its state has changed (M19).
+  fn check_state(
+    &mut self,
+    event_loop: &ActiveEventLoop,
+    id: winit::window::WindowId,
+  ) {
+    let Some(entry) = self.shell.windows.get_mut(&id) else {
+      return;
+    };
+    let state = state_of(&entry.window);
+    if state == entry.state {
+      return;
+    }
+    entry.state = state;
+    if let Some(hosted) = &entry.hosted {
+      hosted.on_state.call(state);
+    }
+    self.app.state_changed(
+      &mut Self::context(&mut self.shell, event_loop),
+      WindowId(id),
+      state,
+    );
+  }
+
+  /// Saves a window's place and state for `dovetail dev`.
   fn save_placement(
     &self,
     id: winit::window::WindowId,
   ) {
-    if self.shell.primary == Some(id)
-      && let Some(entry) = self.shell.windows.get(&id)
+    if let Some(entry) = self.shell.windows.get(&id)
+      && let Some(name) = &entry.dev_name
     {
-      self.shell.dev.save(&entry.window);
+      self.shell.dev.save(name, &entry.window);
     }
   }
 
@@ -1457,6 +1870,12 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
         lifecycle::run_tasks(event_loop);
         return;
       },
+      UserEvent::Reopen => {
+        self
+          .app
+          .reopen(&mut Self::context(&mut self.shell, event_loop));
+        return;
+      },
     };
     let Some(entry) = self.shell.windows.get_mut(&event.window_id) else {
       return;
@@ -1487,7 +1906,18 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
     for work in std::mem::take(&mut self.queued) {
       work(&mut Self::context(&mut self.shell, event_loop));
     }
+    // The root, which has no window, builds what changed: it may open or
+    // close windows (M19).
+    if let Some(root) = &mut self.shell.root
+      && (self.shell.state_changed.get() || root.needs_update())
+    {
+      root.update(Some(root::ROOT_SIZE));
+    }
     self.shell.serve_host(event_loop);
+    self.shell.publish_windows();
+    if self.started && self.shell.should_end() {
+      event_loop.exit();
+    }
     // Components whose close guard agreed close their windows.
     for window in self.shell.guarded_to_close() {
       Self::context(&mut self.shell, event_loop).close_window(window);
@@ -1573,10 +2003,11 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
     }
     self.started = true;
     event_loop.set_control_flow(ControlFlow::Wait);
+    self.shell.refresh_monitors(event_loop);
     self
       .app
       .started(&mut Self::context(&mut self.shell, event_loop));
-    if self.shell.windows.is_empty() && !self.shell.pumped {
+    if self.shell.should_end() {
       event_loop.exit();
     }
   }
@@ -1596,6 +2027,20 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
     {
       ui.adapter.process_event(&entry.window, &event);
     }
+    // A window a modal window blocks takes no input, and the Alt press
+    // that bringing a window to the front sends is not a key (M19).
+    if self.shell.refuse(id, &event) || self.shell.alt_from_focus(id, &event) {
+      return;
+    }
+    // The monitors are read again on window events, as D0029 decides.
+    if matches!(
+      event,
+      WindowEvent::Focused(true)
+        | WindowEvent::Moved(_)
+        | WindowEvent::ScaleFactorChanged { .. }
+    ) {
+      self.shell.refresh_monitors(event_loop);
+    }
     match event {
       WindowEvent::RedrawRequested => {
         if let Some(entry) = self.shell.windows.get_mut(&id) {
@@ -1606,10 +2051,14 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
       WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
         self.resized(event_loop, id);
         self.save_placement(id);
+        // The state first, so a window maximised is not saved at its
+        // maximised size as its normal one (M19).
+        self.check_state(event_loop, id);
         self.tell_place(id);
       },
       WindowEvent::Moved(_) => {
         self.save_placement(id);
+        self.check_state(event_loop, id);
         self.tell_place(id);
       },
       // A frame asked for while the window was hidden or minimised is
@@ -1621,6 +2070,8 @@ impl<A: Application> ApplicationHandler<UserEvent> for Runner<A> {
             entry.window.request_redraw();
           }
         }
+        // macOS says a window is minimised only this way.
+        self.check_state(event_loop, id);
       },
       WindowEvent::CloseRequested => {
         // A component that guards the window is asked first.
@@ -1867,6 +2318,10 @@ fn start(
     host,
     dialog_owner,
     pumped,
+    // Programs written against `Application` end with their last window,
+    // as they always have; `run_windows` chooses by the system.
+    exit_policy: ExitPolicy::AfterLastWindow,
+    root: None,
   };
   // Themes follow the system's light or dark mode, accent colour and
   // contrast (M14).
@@ -1883,6 +2338,7 @@ fn finish<A: Application>(runner: &mut Runner<A>) {
   dovetail_core::set_native_menus(None);
   dovetail_core::set_window_host(None);
   // Component trees, canvases and surfaces must go before the GPU.
+  runner.shell.root = None;
   runner.shell.windows.clear();
   runner.shell.painter = None;
 }

@@ -30,6 +30,9 @@ pub struct Shortcut {
   pub shift: bool,
   /// With Alt (Option on macOS).
   pub alt: bool,
+  /// With the other modifier: Control on macOS, the Windows or Super key
+  /// elsewhere (M19).
+  pub other: bool,
 }
 
 /// Why text is not a shortcut.
@@ -123,13 +126,16 @@ impl FromStr for Shortcut {
 
   /// Reads text such as `Mod+S`, `Mod+Shift+Z`, `Alt+Enter` or `F5`.
   /// `Mod`, `Ctrl`, `Cmd` and `Command` all mean the main modifier;
-  /// `Option` means Alt. `Plus` is the `+` key.
+  /// `Option` means Alt. `MacCtrl`, `Super` and `Win` mean the other
+  /// modifier: Control on macOS, the Windows key elsewhere. `Plus` is the
+  /// `+` key.
   fn from_str(text: &str) -> Result<Shortcut, ShortcutError> {
     let mut shortcut = Shortcut {
       key: ShortcutKey::Char(' '),
       primary: false,
       shift: false,
       alt: false,
+      other: false,
     };
     let mut key = None;
     for part in text.split('+').map(str::trim) {
@@ -140,6 +146,7 @@ impl FromStr for Shortcut {
         },
         "shift" => shortcut.shift = true,
         "alt" | "option" | "opt" => shortcut.alt = true,
+        "macctrl" | "super" | "win" | "meta" => shortcut.other = true,
         _ => {
           if key.is_some() {
             return Err(ShortcutError::TwoKeys);
@@ -182,7 +189,7 @@ impl Shortcut {
     if m.command() != self.primary
       || m.shift != self.shift
       || m.alt != self.alt
-      || other
+      || other != self.other
     {
       return false;
     }
@@ -207,6 +214,9 @@ impl Shortcut {
     };
     if cfg!(target_os = "macos") {
       let mut s = String::new();
+      if self.other {
+        s.push('⌃');
+      }
       if self.alt {
         s.push('⌥');
       }
@@ -221,6 +231,9 @@ impl Shortcut {
       let mut parts = Vec::new();
       if self.primary {
         parts.push("Ctrl");
+      }
+      if self.other {
+        parts.push("Win");
       }
       if self.alt {
         parts.push("Alt");
@@ -243,6 +256,7 @@ impl Shortcut {
       primary: self.primary,
       shift: self.shift,
       alt: self.alt,
+      other: self.other,
     }
   }
 }

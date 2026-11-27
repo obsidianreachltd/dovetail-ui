@@ -38,6 +38,7 @@ Document state lives outside widget state. Undoable edits go through the command
 - winit provides windows and the event loop. wgpu provides GPU rendering. Both are checked in [M01](../milestones/overviews/M01-window-and-gpu.md) before we commit to them.
 - Layout, text and 2D painting are our own code ([D0002](../decisions/D0002-build-own-stack.md)).
 - Accessibility goes through AccessKit ([D0003](../decisions/D0003-accesskit-for-accessibility.md)). Dovetail builds the accessibility tree from its components.
+- Top-level windows are components (M19, [D0029](../decisions/D0029-window-management.md)). A `Window` opens its window while it is shown and closes it when it goes. An application run with `run_windows` has a root tree with no window of its own, so it can keep running with no windows open, as macOS applications do. Windows keep their places and states between runs in `SavedWindows`, and are fitted onto the monitors there are when they open.
 
 The rendering design must say:
 

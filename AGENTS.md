@@ -31,6 +31,7 @@ Before you change anything, read the [goals](docs/vision/goals.md), the [princip
 - **Generated code** from `#[component]` and `ui!` refers to `::dovetail`. A crate that uses `dovetail-core` directly adds `extern crate dovetail_core as dovetail;`.
 - **State is made while a component builds**, with `use_state`. This includes framework objects such as `Commands`, `Dock`, `Document`, `Selection` and `Expansion`, for example `use_state(Commands::new)` or `use_state(|| Dock::new(..)).get()`.
 - **Keep state in signals, not in views.** Views are built again often. Docking builds a panel's content again when the panel moves.
+- **Top-level windows are `Window` components**, opened while shown and closed when they go. Keep their places in `SavedWindows` by name, not in files of your own. Bring a window to the front through the desktop's `bring_to_front`, which ignores the Alt press winit sends to do it on Windows.
 - **Edits go through `History`**, so they can be undone. Change a `Document` only with `edit`.
 - **Colours come from the theme.** Controls read `theme()`. Never add a fixed colour to the control packages: a test scans them.
 - **Accessibility:** give every control a role and every text field a `label`. A picture has a label, or is decoration.

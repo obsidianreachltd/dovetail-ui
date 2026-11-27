@@ -52,10 +52,12 @@ pub mod prelude {
   };
   pub use dovetail_core::{
     BuildContext, Callback, Children, Color, Component, ComponentId, Curve,
-    Key, Signal, Transition, Tree, View, use_animated, use_state,
+    Key, Signal, Transition, Tree, View, Window, use_animated, use_state,
   };
   pub use dovetail_macros::{component, ui};
 }
+
+pub use desktop::{ExitPolicy, run_windows};
 
 /// Opens one window titled `title` that shows `root`, and runs until it is
 /// closed. `root` must be a component view, such as `ui! { App {} }`.

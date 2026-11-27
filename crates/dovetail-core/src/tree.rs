@@ -401,6 +401,14 @@ impl Tree {
       .map_or(&[], |i| &i.children)
   }
 
+  /// True when component `id` is in this tree (M19).
+  pub fn contains(
+    &self,
+    id: ComponentId,
+  ) -> bool {
+    self.instances.contains_key(&id)
+  }
+
   /// A component's parent, if it has one.
   pub fn parent(
     &self,

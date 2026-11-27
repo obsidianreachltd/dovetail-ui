@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | ID | M19 |
-| Status | Not started |
+| Status | In progress |
 | Depends on | M10, M11 |
-| Plan | — |
+| Plan | [M19 plan](../plans/M19-window-management.md) |
 | Report | — |
 
 ## Summary

@@ -35,19 +35,22 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use dovetail_core::{
-  BuildContext, Component, DragEnd, KeyCode, KeyEvent, Modifiers, NamedKey,
-  PointerButton, SystemSettings, TestClock, View,
+  BuildContext, Component, DragEnd, HostWindow, KeyCode, KeyEvent, Modifiers,
+  NamedKey, PointerButton, SystemSettings, TestClock, View, WindowPlace,
+  WindowState,
 };
 use dovetail_layout::{FixedPitch, Layout, Measure};
 use dovetail_session::{AccessTree, Drag, Request, Session, Settings};
 
 mod find;
+mod host;
 #[cfg(feature = "pictures")]
 mod pictures;
 #[cfg(feature = "windows")]
 pub mod windows;
 
 pub use find::{Find, FindError, Found, label, role, text};
+pub use host::TestWindowInfo;
 #[cfg(feature = "pictures")]
 pub use pictures::{ODD_PIXELS_PER_THOUSAND, Picture, TOLERANCE};
 
@@ -118,9 +121,24 @@ pub fn command() -> Modifiers {
 }
 
 /// A component running as a window would, with no window or GPU.
+///
+/// Windows its components open with [`dovetail_core::Window`] are kept
+/// too, each with a session of its own (M19). [`TestUi::windows`] lists
+/// them, and [`TestUi::switch_to`] makes finding, the pointer and the keys
+/// act in one of them, as a user who brings it to the front.
 pub struct TestUi {
+  /// The session of the window in front: the main one, or the one
+  /// [`TestUi::switch_to`] chose.
   session: Session,
   size: (f32, f32),
+  /// Takes the requests of the components that open windows.
+  host: Rc<host::TestHost>,
+  /// The windows they opened. The one in front has its session in
+  /// `session`, and none here.
+  hosted: Vec<host::Hosted>,
+  /// The window in front, when it is not the main one, with the main
+  /// window's session and size kept meanwhile.
+  front: Option<(HostWindow, Session, (f32, f32))>,
   scale: f32,
   clock: Rc<TestClock>,
   #[cfg(feature = "pictures")]
@@ -156,6 +174,10 @@ impl TestUi {
     dovetail_core::set_clipboard(None);
     let clock = TestClock::install();
     dovetail_core::set_system_settings(options.settings);
+    let host = Rc::new(host::TestHost::default());
+    dovetail_core::set_window_host(Some(Rc::new(host::Queue(Rc::clone(
+      &host,
+    )))));
     let session = Session::new(
       options.title,
       View::component::<Show>(ShowProps { view: root }),
@@ -166,6 +188,9 @@ impl TestUi {
     let mut ui = Self {
       session,
       size: options.size,
+      host,
+      hosted: Vec::new(),
+      front: None,
       scale: options.scale,
       clock,
       #[cfg(feature = "pictures")]
@@ -182,16 +207,33 @@ impl TestUi {
   /// before it returns, so tests call it only after changing state
   /// themselves.
   pub fn update(&mut self) {
-    // The window follows the system's settings, as a real one does when
-    // they change.
-    self
-      .session
-      .set_settings(Settings::from(dovetail_core::system_settings()));
-    // What layout reports can change the tree again; a few rounds settle
-    // it, as a window does over a few frames.
-    for _ in 0..3 {
-      self.session.update(Some(self.size));
-      if !self.session.needs_update() {
+    // Windows opened while building are built in the same update, and
+    // windows closed go (M19). A few rounds settle it.
+    for _ in 0..8 {
+      self.update_sessions();
+      let mut focus = Vec::new();
+      let served = self.host.serve(&mut self.hosted, &mut focus);
+      self.return_from_closed();
+      for window in focus {
+        if self.hosted.iter().any(|w| w.info.id == window) {
+          self.switch_to(window);
+        }
+      }
+      // Components that read the list of windows see it.
+      let front = self.front_window();
+      dovetail_core::set_app_windows(
+        self
+          .hosted
+          .iter()
+          .map(|w| dovetail_core::AppWindow {
+            id: w.info.id,
+            title: w.info.title.clone(),
+            state: w.info.state,
+            focused: front == Some(w.info.id),
+          })
+          .collect(),
+      );
+      if !served && !self.any_needs_update() {
         break;
       }
     }
@@ -205,13 +247,308 @@ impl TestUi {
     }
   }
 
-  /// Gives the window a new size, in logical pixels, and lays it out.
+  /// Builds and lays out every window's session.
+  fn update_sessions(&mut self) {
+    let settings = Settings::from(dovetail_core::system_settings());
+    // The main window first, wherever it is, so what it declares reaches
+    // the windows it opened in the same update.
+    let (main, front) = match &mut self.front {
+      Some((_, main, size)) => {
+        ((main, *size), Some((&mut self.session, self.size)))
+      },
+      None => ((&mut self.session, self.size), None),
+    };
+    let sessions = std::iter::once(main).chain(front).chain(
+      self
+        .hosted
+        .iter_mut()
+        .filter_map(|w| Some((w.session.as_mut()?, w.info.place.size))),
+    );
+    for (session, size) in sessions {
+      // The window follows the system's settings, as a real one does when
+      // they change.
+      session.set_settings(settings);
+      // What layout reports can change the tree again; a few rounds settle
+      // it, as a window does over a few frames.
+      for _ in 0..3 {
+        session.update(Some(size));
+        if !session.needs_update() {
+          break;
+        }
+      }
+    }
+  }
+
+  fn any_needs_update(&self) -> bool {
+    self.session.needs_update()
+      || self
+        .front
+        .as_ref()
+        .is_some_and(|f| f.1.needs_update())
+      || self
+        .hosted
+        .iter()
+        .filter_map(|w| w.session.as_ref())
+        .any(Session::needs_update)
+  }
+
+  /// The window whose session holds component `id`: `Some(None)` for the
+  /// main one.
+  fn window_holding(
+    &self,
+    id: dovetail_core::ComponentId,
+  ) -> Option<Option<HostWindow>> {
+    let (main, front) = match &self.front {
+      Some((window, main, _)) => (main, Some((*window, &self.session))),
+      None => (&self.session, None),
+    };
+    if main.contains(id) {
+      return Some(None);
+    }
+    if let Some((window, session)) = front
+      && session.contains(id)
+    {
+      return Some(Some(window));
+    }
+    self
+      .hosted
+      .iter()
+      .find(|w| w.session.as_ref().is_some_and(|s| s.contains(id)))
+      .map(|w| Some(w.info.id))
+  }
+
+  /// The modal window that blocks `window` (`None` for the main one), if
+  /// one does (M19).
+  pub fn blocked_by(
+    &self,
+    window: Option<HostWindow>,
+  ) -> Option<HostWindow> {
+    self
+      .hosted
+      .iter()
+      .filter(|w| w.info.modal)
+      .find(|w| {
+        w.context
+          .and_then(|c| self.window_holding(c))
+          .is_some_and(|owner| owner == window)
+      })
+      .map(|w| w.info.id)
+  }
+
+  /// When the window in front is blocked by a modal window, brings that
+  /// one to the front instead, as a press on a blocked window does, and
+  /// says so.
+  fn refused(&mut self) -> bool {
+    match self.blocked_by(self.front_window()) {
+      Some(modal) => {
+        self.switch_to(modal);
+        true
+      },
+      None => false,
+    }
+  }
+
+  /// When the window in front has closed, the main one is in front again.
+  fn return_from_closed(&mut self) {
+    // A new title for the window in front reaches its session.
+    if let Some((id, ..)) = &self.front
+      && let Some(w) = self.hosted.iter().find(|w| w.info.id == *id)
+      && w.info.title != self.session.title()
+    {
+      self.session.set_title(w.info.title.clone());
+    }
+    if let Some((id, ..)) = &self.front
+      && !self.hosted.iter().any(|w| w.info.id == *id)
+      && let Some((_, main, size)) = self.front.take()
+    {
+      self.session = main;
+      self.size = size;
+    }
+  }
+
+  /// Gives the window in front a new size, in logical pixels, and lays it
+  /// out.
   pub fn resize(
     &mut self,
     width: f32,
     height: f32,
   ) {
     self.size = (width, height);
+    if let Some(w) = self.front_hosted() {
+      w.info.place.size = (width, height);
+    }
+    self.update();
+  }
+
+  // Windows (M19).
+
+  /// The windows the components have open, in the order they opened.
+  pub fn windows(&self) -> Vec<TestWindowInfo> {
+    self
+      .hosted
+      .iter()
+      .map(|w| w.info.clone())
+      .collect()
+  }
+
+  /// The one open window titled `title`.
+  ///
+  /// # Panics
+  ///
+  /// When none or more than one has that title. The message lists the
+  /// windows open.
+  #[track_caller]
+  pub fn window(
+    &self,
+    title: &str,
+  ) -> HostWindow {
+    let found: Vec<HostWindow> = self
+      .hosted
+      .iter()
+      .filter(|w| w.info.title == title)
+      .map(|w| w.info.id)
+      .collect();
+    match found[..] {
+      [one] => one,
+      _ => panic!(
+        "expected one window titled {title:?}, found {}. Open: {:?}",
+        found.len(),
+        self
+          .hosted
+          .iter()
+          .map(|w| w.info.title.as_str())
+          .collect::<Vec<_>>()
+      ),
+    }
+  }
+
+  /// The window in front, or `None` for the main one.
+  pub fn front_window(&self) -> Option<HostWindow> {
+    self.front.as_ref().map(|f| f.0)
+  }
+
+  /// Brings `window` to the front: finding, the pointer and the keys act
+  /// in it until [`TestUi::switch_to_main`] or another `switch_to`. When it
+  /// closes, the main window is in front again.
+  ///
+  /// # Panics
+  ///
+  /// When `window` is not open.
+  #[track_caller]
+  pub fn switch_to(
+    &mut self,
+    window: HostWindow,
+  ) {
+    if self.front_window() == Some(window) {
+      return;
+    }
+    self.switch_to_main();
+    let w = self
+      .hosted
+      .iter_mut()
+      .find(|w| w.info.id == window)
+      .unwrap_or_else(|| panic!("window {window:?} is not open"));
+    let session = w
+      .session
+      .take()
+      .expect("a window in the back has its session");
+    let size = w.info.place.size;
+    let main = std::mem::replace(&mut self.session, session);
+    let main_size = std::mem::replace(&mut self.size, size);
+    self.front = Some((window, main, main_size));
+  }
+
+  /// Brings the main window to the front again.
+  pub fn switch_to_main(&mut self) {
+    let Some((id, main, size)) = self.front.take() else {
+      return;
+    };
+    let session = std::mem::replace(&mut self.session, main);
+    self.size = size;
+    if let Some(w) = self.hosted.iter_mut().find(|w| w.info.id == id) {
+      w.session = Some(session);
+    }
+  }
+
+  fn front_hosted(&mut self) -> Option<&mut host::Hosted> {
+    let id = self.front_window()?;
+    self.hosted.iter_mut().find(|w| w.info.id == id)
+  }
+
+  #[track_caller]
+  fn hosted(
+    &mut self,
+    window: HostWindow,
+  ) -> &mut host::Hosted {
+    self
+      .hosted
+      .iter_mut()
+      .find(|w| w.info.id == window)
+      .unwrap_or_else(|| panic!("window {window:?} is not open"))
+  }
+
+  /// Closes `window` as the user would, from its title bar: its component
+  /// is asked, and decides.
+  ///
+  /// # Panics
+  ///
+  /// When `window` is not open.
+  #[track_caller]
+  pub fn close_window(
+    &mut self,
+    window: HostWindow,
+  ) {
+    // A window a modal window blocks cannot be closed.
+    if self.blocked_by(Some(window)).is_some() {
+      return;
+    }
+    let ask = self.hosted(window).on_close.clone();
+    ask.call(());
+    self.update();
+  }
+
+  /// Puts `window` in `state` as the user would, as with its maximise
+  /// button, and tells its component.
+  ///
+  /// # Panics
+  ///
+  /// When `window` is not open.
+  #[track_caller]
+  pub fn set_window_state(
+    &mut self,
+    window: HostWindow,
+    state: WindowState,
+  ) {
+    let w = self.hosted(window);
+    w.info.state = state;
+    let tell = w.on_state.clone();
+    tell.call(state);
+    self.update();
+  }
+
+  /// Moves or resizes `window` as the user would, and tells its
+  /// component.
+  ///
+  /// # Panics
+  ///
+  /// When `window` is not open.
+  #[track_caller]
+  pub fn move_window(
+    &mut self,
+    window: HostWindow,
+    place: WindowPlace,
+  ) {
+    let w = self.hosted(window);
+    w.info.place = WindowPlace {
+      position: place.position,
+      size: w.info.limits.clamp(place.size),
+    };
+    let place = w.info.place;
+    let tell = w.on_place.clone();
+    if self.front_window() == Some(window) {
+      self.size = place.size;
+    }
+    tell.call(place);
     self.update();
   }
 
@@ -410,6 +747,11 @@ impl TestUi {
     button: PointerButton,
     modifiers: Modifiers,
   ) {
+    // A window a modal window blocks refuses presses (M19).
+    if self.refused() {
+      self.update();
+      return;
+    }
     self.session.set_cursor(at);
     if self.drag.is_none() {
       self.session.pointer_moved(modifiers);
@@ -507,6 +849,9 @@ impl TestUi {
     dy: f32,
   ) -> bool {
     let at = self.find(search).centre();
+    if self.blocked_by(self.front_window()).is_some() {
+      return false;
+    }
     self.session.set_cursor(at);
     let used = self
       .session
@@ -550,6 +895,10 @@ impl TestUi {
       self.drag_end = Some(DragEnd::Cancelled);
       self.update();
       return true;
+    }
+    // A window a modal window blocks refuses keys (M19).
+    if self.blocked_by(self.front_window()).is_some() {
+      return false;
     }
     let used = self.session.key(&event);
     self.update();
@@ -724,7 +1073,8 @@ impl TestUi {
 impl Drop for TestUi {
   fn drop(&mut self) {
     // The next test on this thread starts with the real time, and the
-    // usual settings.
+    // usual settings, and with no host for windows.
+    dovetail_core::set_window_host(None);
     dovetail_core::set_clock(None);
     dovetail_core::set_system_settings(SystemSettings::default());
   }
