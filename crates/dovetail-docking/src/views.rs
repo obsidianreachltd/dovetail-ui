@@ -1,5 +1,6 @@
 //! The dock on screen: [`Dock`] holds the state, [`DockArea`] shows the
-//! main window's panels, and each floating stack gets a window of its own.
+//! main window's panels, and each floating stack gets a window of its own,
+//! a [`Window`](dovetail::Window) that the dock area shows (M19).
 
 use std::collections::HashMap;
 use std::fmt;
@@ -8,10 +9,10 @@ use std::rc::Rc;
 
 use dovetail::{
   Align, Callback, Color, DragData, DragEnd, DropEvent, DropHandler, DropKind,
-  Edges, Element, ElementKind, FocusTarget, HostWindow, KeyEvent, KeyHandler,
-  NamedKey, PointerButton, PointerHandler, PointerKind, Role, Signal, Size,
-  Style, View, WindowPlace, WindowRequest, create_signal, start_drag,
-  use_state, window_host,
+  Edges, Element, ElementKind, FocusTarget, KeyEvent, KeyHandler, NamedKey,
+  PointerButton, PointerHandler, PointerKind, Role, SavedWindow, Signal, Size,
+  Style, View, Window, WindowLimits, WindowPlace, WindowState, create_signal,
+  start_drag, use_state,
 };
 use dovetail_macros::{component, ui};
 use dovetail_theme::theme;
@@ -106,15 +107,10 @@ struct Shown {
 /// What the views do not show, so changing it builds nothing again.
 #[derive(Default)]
 struct Quiet {
-  /// The window of each floating stack, and its title.
-  windows: HashMap<u64, (HostWindow, String)>,
   /// Where floating windows are now.
   places: HashMap<u64, WindowPlace>,
   /// The file the layout is kept in, and what it holds.
   file: Option<(PathBuf, String)>,
-  /// The dock area's component, whose provided values floating windows
-  /// see (M14).
-  context: Option<dovetail::ComponentId>,
 }
 
 /// The docking state: the layout, the panels, and what they show. Make it
@@ -386,56 +382,68 @@ impl Dock {
     }
   }
 
-  /// Opens a window for each floating stack that has none, closes the
-  /// windows of stacks that are gone, and keeps their titles right.
+  /// Forgets the places of floating stacks that are gone. Their windows
+  /// are `Window`s the dock area shows, so they close by themselves (M19).
   fn sync_windows(self) {
-    let Some(host) = window_host() else {
-      return;
-    };
     let floating = self.shown.map(|s| s.layout.floating.clone());
-    let titles: Vec<String> = floating
-      .iter()
-      .map(|f| self.title(f.tabs.active_panel()))
-      .collect();
-    let mut open = Vec::new();
     self.quiet.update(|q| {
-      q.windows.retain(|id, (window, _)| {
-        let kept = floating.iter().any(|f| f.id == *id);
-        if !kept {
-          host.close(*window);
-        }
-        kept
-      });
       q.places
         .retain(|id, _| floating.iter().any(|f| f.id == *id));
-      for (f, title) in floating.iter().zip(&titles) {
-        match q.windows.get_mut(&f.id) {
-          Some((window, shown)) => {
-            if shown != title {
-              host.set_title(*window, title);
-              *shown = title.clone();
-            }
-          },
-          None => open.push((f.id, f.place, title.clone())),
-        }
-      }
     });
-    for (id, place, title) in open {
+  }
+
+  /// A window for each floating stack, opened where the layout says,
+  /// fitted onto the monitors there are (M19).
+  fn floating_windows(self) -> View {
+    let floating = self.shown.map(|s| s.layout.floating.clone());
+    let monitors = dovetail::monitors();
+    View::fragment(floating.into_iter().map(|f| {
+      let id = f.id;
       let dock = self;
-      let window = host.open(WindowRequest {
-        title: title.clone(),
-        place: place
-          .unwrap_or(WindowPlace { position: None, size: FLOAT_SIZE }),
-        root: ui! { FloatingStack { dock: dock, id: id } },
-        on_close: Callback::new(move |()| dock.dock_floating(id)),
-        on_place: Callback::new(move |p| dock.set_place(id, p)),
-        // Floating panels see what the dock's area sees, such as the theme.
-        context: self.quiet.map(|q| q.context),
+      let place = f
+        .place
+        .unwrap_or(WindowPlace { position: None, size: FLOAT_SIZE });
+      // The layout keeps logical pixels at the scale of the monitor the
+      // window was on.
+      let scale = place.position.and_then(|(x, y)| {
+        monitors
+          .iter()
+          .find(|m| m.bounds.contains((x * m.scale, y * m.scale)))
+          .map(|m| m.scale)
       });
-      self.quiet.update(|q| {
-        q.windows.insert(id, (window, title));
-      });
-    }
+      let saved = SavedWindow {
+        position: place.position,
+        size: place.size,
+        scale: scale.unwrap_or(1.0),
+        state: WindowState::Normal,
+        monitor: None,
+      };
+      let (fitted, _) =
+        dovetail::fit(&saved, &monitors, WindowLimits::default());
+      let title = self.title(f.tabs.active_panel());
+      let window: View = match fitted.position {
+        Some(position) => ui! {
+          Window {
+            title: title,
+            size: fitted.size,
+            position: position,
+            on_close: move |()| dock.dock_floating(id),
+            on_place: move |p| dock.set_place(id, p),
+            FloatingStack { dock: dock, id: id }
+          }
+        },
+        None => ui! {
+          Window {
+            title: title,
+            size: fitted.size,
+            on_close: move |()| dock.dock_floating(id),
+            on_place: move |p| dock.set_place(id, p),
+            FloatingStack { dock: dock, id: id }
+          }
+        },
+      };
+      View::keyed(window, id)
+    }))
   }
 
   /// Shows a preview for the drop target `owner`, if it is not shown yet.
@@ -571,11 +579,6 @@ fn fill() -> Style {
 /// to drop panels along the sides. It fills the space it is given.
 #[component]
 pub fn DockArea(dock: Dock) -> View {
-  if let Some(me) = dovetail::current_component()
-    && dock.quiet.map(|q| q.context != Some(me))
-  {
-    dock.quiet.update(|q| q.context = Some(me));
-  }
   let root = dock.shown.map(|s| s.layout.root.is_some());
   let preview = dock.shown.map(|s| s.preview.clone().map(|p| p.1));
   let edge = |side: Side| -> View {
@@ -628,11 +631,14 @@ pub fn DockArea(dock: Dock) -> View {
       edge(Side::Right),
     ])
     .into();
-  Element::new(ElementKind::Column)
+  let area: View = Element::new(ElementKind::Column)
     .style(fill())
     .on_key(unfocused_keys(dock))
     .children([edge(Side::Top), row, edge(Side::Bottom)])
-    .into()
+    .into();
+  // Floating stacks' windows belong to the dock area: they close when it
+  // goes, as when its window closes (M19).
+  View::fragment([area, dock.floating_windows()])
 }
 
 /// The part of the main window's layout at `path`.

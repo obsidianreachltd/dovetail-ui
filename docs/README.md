@@ -14,6 +14,7 @@ This folder holds all project documents. Start with [goals](vision/goals.md), th
 | [architecture/testing.md](architecture/testing.md) | How to test a user interface with `dovetail-testing`: headless, pictures and real windows |
 | [architecture/reactive-handles-prototype.md](architecture/reactive-handles-prototype.md) | M02 prototype report comparing two designs for reactive state handles |
 | [architecture/window-tests-prototype.md](architecture/window-tests-prototype.md) | M20 prototype report: real-window tests run from `cargo test` |
+| [architecture/window-modal-prototype.md](architecture/window-modal-prototype.md) | M19 prototype report: modal windows and monitor changes |
 | [decisions/](decisions/README.md) | Records of important decisions |
 | [milestones/](milestones/README.md) | Milestone overviews, plans and completion reports, with the completion matrix |
 | [bugs/](bugs/README.md) | Bug records |

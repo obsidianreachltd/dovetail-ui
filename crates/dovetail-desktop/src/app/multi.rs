@@ -7,7 +7,8 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use dovetail_core::{
-  Callback, HostWindow, WindowHost, WindowPlace, WindowRequest,
+  Callback, HostWindow, WindowHost, WindowLimits, WindowPlace, WindowRequest,
+  WindowState,
 };
 use dovetail_session::{Drag, Session};
 use winit::event_loop::ActiveEventLoop;
@@ -29,12 +30,16 @@ pub(super) struct Hosted {
   pub(super) id: HostWindow,
   pub(super) on_close: Callback<()>,
   pub(super) on_place: Callback<WindowPlace>,
+  pub(super) on_state: Callback<WindowState>,
 }
 
 enum HostRequest {
-  Open(HostWindow, WindowRequest),
+  Open(HostWindow, Box<WindowRequest>),
   Close(HostWindow),
   Title(HostWindow, String),
+  State(HostWindow, WindowState),
+  Limits(HostWindow, WindowLimits),
+  Focus(HostWindow),
 }
 
 /// Requests from components, carried out by the event loop.
@@ -58,7 +63,7 @@ impl WindowHost for DesktopHost {
       .0
       .requests
       .borrow_mut()
-      .push(HostRequest::Open(id, request));
+      .push(HostRequest::Open(id, Box::new(request)));
     id
   }
 
@@ -83,6 +88,41 @@ impl WindowHost for DesktopHost {
       .requests
       .borrow_mut()
       .push(HostRequest::Title(window, title.to_string()));
+  }
+
+  fn set_state(
+    &self,
+    window: HostWindow,
+    state: WindowState,
+  ) {
+    self
+      .0
+      .requests
+      .borrow_mut()
+      .push(HostRequest::State(window, state));
+  }
+
+  fn set_limits(
+    &self,
+    window: HostWindow,
+    limits: WindowLimits,
+  ) {
+    self
+      .0
+      .requests
+      .borrow_mut()
+      .push(HostRequest::Limits(window, limits));
+  }
+
+  fn focus(
+    &self,
+    window: HostWindow,
+  ) {
+    self
+      .0
+      .requests
+      .borrow_mut()
+      .push(HostRequest::Focus(window));
   }
 }
 
@@ -269,6 +309,16 @@ impl Shell {
                 f64::from(request.place.size.1),
               ));
             options.position = request.place.position;
+            options.limits = request.limits;
+            options.state = request.state;
+            // A modal window belongs to the window that shows the
+            // component that opened it (M19).
+            if request.modal
+              && let Some(owner) = self.window_holding(request.context)
+            {
+              options = options.with_owner(super::WindowId(owner), true);
+            }
+            let modal = options.modal;
             match self.open_ui(
               event_loop,
               options,
@@ -281,7 +331,11 @@ impl Shell {
                     id,
                     on_close: request.on_close,
                     on_place: request.on_place,
+                    on_state: request.on_state,
                   });
+                }
+                if modal {
+                  self.bring_to_front(window.0);
                 }
               },
               Err(e) => eprintln!("dovetail: could not open a window: {e}"),
@@ -301,10 +355,38 @@ impl Shell {
               self.windows.remove(&w);
             }
           },
+          HostRequest::Focus(id) => {
+            let found = self
+              .windows
+              .iter()
+              .find(|(_, e)| e.hosted.as_ref().is_some_and(|h| h.id == id))
+              .map(|(w, _)| *w);
+            if let Some(w) = found {
+              self.bring_to_front(w);
+            }
+          },
+          HostRequest::State(id, state) => {
+            for e in self.windows.values() {
+              if e.hosted.as_ref().is_some_and(|h| h.id == id) {
+                e.wanted
+                  .set(Some(super::manage::Wanted::new(state)));
+                super::apply_state(&e.window, state);
+              }
+            }
+          },
+          HostRequest::Limits(id, limits) => {
+            for e in self.windows.values_mut() {
+              if e.hosted.as_ref().is_some_and(|h| h.id == id) {
+                super::apply_limits(&e.window, limits);
+                e.limits = limits;
+              }
+            }
+          },
           HostRequest::Title(id, title) => {
             for e in self.windows.values_mut() {
               if e.hosted.as_ref().is_some_and(|h| h.id == id) {
                 e.window.set_title(&title);
+                e.title.clone_from(&title);
                 if let Some(ui) = &mut e.ui {
                   ui.session.set_title(title.clone());
                 }

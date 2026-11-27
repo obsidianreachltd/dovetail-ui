@@ -967,6 +967,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "example-multi-window"
+version = "0.1.0"
+dependencies = [
+ "dovetail-testing",
+ "dovetail-ui",
+]
+
+[[package]]
 name = "example-text-field"
 version = "0.1.0"
 dependencies = [
@@ -2036,6 +2044,14 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 [[package]]
 name = "prototype-reactive-handles"
 version = "0.1.0"
+
+[[package]]
+name = "prototype-window-modal"
+version = "0.1.0"
+dependencies = [
+ "dovetail-render",
+ "winit",
+]
 
 [[package]]
 name = "prototype-window-tests"

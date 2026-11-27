@@ -22,6 +22,7 @@ mod context;
 mod history;
 mod shortcut;
 mod views;
+mod window;
 
 pub use commands::{CommandInfo, Commands, ShortcutConflict};
 pub use context::ContextMenu;
@@ -30,6 +31,7 @@ pub use shortcut::{Shortcut, ShortcutError, ShortcutKey};
 pub use views::{
   CommandButton, CommandScope, CommandSearch, Menu, MenuBar, MenuItem, Toolbar,
 };
+pub use window::{FULL_SCREEN, add_full_screen, full_screen_shortcut};
 
 /// State for unit tests: made while a component builds, as all state must
 /// be, and kept while the returned tree lives.

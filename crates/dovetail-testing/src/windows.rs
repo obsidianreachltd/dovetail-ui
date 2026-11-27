@@ -45,6 +45,7 @@ use std::time::{Duration, Instant};
 
 use dovetail_core::{
   KeyCode, KeyEvent, Modifiers, NamedKey, PointerButton, PointerKind, View,
+  WindowPlace, WindowState,
 };
 use dovetail_desktop::{
   Context, LogicalSize, Pumped, WindowId, WindowOptions, WindowStats,
@@ -110,6 +111,21 @@ impl TestWindows {
   ) -> TestWindow {
     let options = WindowOptions::new(title)
       .with_size(LogicalSize::new(f64::from(size.0), f64::from(size.1)));
+    self.open_with(options, root)
+  }
+
+  /// Opens a window with `options`, such as size limits or a state (M19),
+  /// showing `root`, as [`TestWindows::open`] does.
+  ///
+  /// # Panics
+  ///
+  /// When it cannot open, or draws no frame within [`PATIENCE`].
+  #[track_caller]
+  pub fn open_with(
+    &mut self,
+    options: WindowOptions,
+    root: View,
+  ) -> TestWindow {
     let root = View::component::<Show>(ShowProps { view: root });
     let id = self
       .with(move |cx| {
@@ -125,6 +141,140 @@ impl TestWindows {
       t.stats(w).presented > 0
     });
     w
+  }
+
+  /// The state a window says it is in (M19).
+  ///
+  /// # Panics
+  ///
+  /// When the window is not open.
+  #[track_caller]
+  pub fn state(
+    &mut self,
+    w: TestWindow,
+  ) -> WindowState {
+    self
+      .with(move |cx| cx.window_state(w.0))
+      .expect("the window is open")
+  }
+
+  /// Asks for a window to be put in `state`, and waits until it says it
+  /// is (M19).
+  ///
+  /// # Panics
+  ///
+  /// When it is not in that state within [`PATIENCE`].
+  #[track_caller]
+  pub fn set_state(
+    &mut self,
+    w: TestWindow,
+    state: WindowState,
+  ) {
+    self.with(move |cx| cx.set_window_state(w.0, state));
+    self.wait_until(&format!("the window to be {state:?}"), move |t| {
+      t.state(w) == state
+    });
+  }
+
+  /// Where a window is, and the size of its drawing area, in logical
+  /// pixels (M19).
+  ///
+  /// # Panics
+  ///
+  /// When the window is not open.
+  #[track_caller]
+  pub fn place(
+    &mut self,
+    w: TestWindow,
+  ) -> WindowPlace {
+    self
+      .with(move |cx| cx.window_place(w.0))
+      .expect("the window is open")
+  }
+
+  /// Asks for a window's drawing area to be `size` logical pixels. The
+  /// system may refuse or change it: read [`TestWindows::place`].
+  pub fn set_size(
+    &mut self,
+    w: TestWindow,
+    size: (f32, f32),
+  ) {
+    self.with(move |cx| {
+      cx.set_window_size(
+        w.0,
+        LogicalSize::new(f64::from(size.0), f64::from(size.1)),
+      );
+    });
+  }
+
+  /// The one open window titled `title`, such as a window a component
+  /// opened, waiting for it to open and draw its first frame (M19).
+  ///
+  /// # Panics
+  ///
+  /// When none is open with that title within [`PATIENCE`].
+  #[track_caller]
+  pub fn window_titled(
+    &mut self,
+    title: &str,
+  ) -> TestWindow {
+    let title = title.to_string();
+    let mut found = None;
+    self.wait_until(&format!("a window titled {title:?}"), |t| {
+      let wanted = title.clone();
+      found = t.with(move |cx| {
+        cx.windows()
+          .into_iter()
+          .find(|w| cx.window_title(*w).as_deref() == Some(wanted.as_str()))
+      });
+      found.is_some_and(|w| t.stats(TestWindow(w)).presented > 0)
+    });
+    TestWindow(found.expect("found"))
+  }
+
+  /// Makes `root` the application's root, a tree with no window whose
+  /// [`Window`](dovetail_core::Window)s open now, as `run_windows` does
+  /// (M19). [`View::Empty`] takes the root away, which closes its windows.
+  pub fn set_root(
+    &mut self,
+    root: View,
+  ) {
+    self.with(move |cx| cx.set_root(root));
+  }
+
+  /// Moves a window's top-left corner to `position`, in logical pixels.
+  /// Wayland ignores this (M19).
+  pub fn move_to(
+    &mut self,
+    w: TestWindow,
+    position: (f32, f32),
+  ) {
+    self.with(move |cx| cx.set_window_position(w.0, position));
+  }
+
+  /// Asks a window to close as the user would, with its close button:
+  /// its components are asked first (M19).
+  pub fn request_close(
+    &mut self,
+    w: TestWindow,
+  ) {
+    self.with(move |cx| cx.request_close(w.0));
+  }
+
+  /// The modal window that blocks a window, if one does (M19).
+  pub fn blocked_by(
+    &mut self,
+    w: TestWindow,
+  ) -> Option<TestWindow> {
+    self.with(move |cx| cx.blocked_by(w.0).map(TestWindow))
+  }
+
+  /// True while a window is open.
+  pub fn is_open(
+    &mut self,
+    w: TestWindow,
+  ) -> bool {
+    self.with(move |cx| cx.windows().contains(&w.0))
   }
 
   /// Closes a window.
@@ -434,7 +584,8 @@ impl TestWindows {
 
   // Waiting.
 
-  /// Runs `work`, then waits until the window has drawn a frame after it.
+  /// Runs `work`, then waits until the window has drawn a frame after it,
+  /// or has closed, as a click on a window's own Close button closes it.
   #[track_caller]
   fn act<R: 'static>(
     &mut self,
@@ -448,7 +599,7 @@ impl TestWindows {
       out
     });
     self.wait_until("the window to draw what changed", move |t| {
-      t.stats(w).presented > before
+      !t.is_open(w) || t.stats(w).presented > before
     });
     out
   }
@@ -498,15 +649,20 @@ impl TestWindows {
         .into_iter()
         .map(|id| {
           let s = cx.window_stats(id).unwrap_or_default();
+          // Where it is, and in what state, for waits on places (M19).
+          let place = cx.window_place(id);
           format!(
             "  {:?}: {} redraw requests, {} frames shown, {} skipped, \
-             hidden {:?}, focused {:?}",
+             hidden {:?}, focused {:?}, at {:?}, size {:?}, {:?}",
             cx.window_title(id).unwrap_or_default(),
             s.redraws,
             s.presented,
             s.skipped,
             s.occluded,
-            s.focused
+            s.focused,
+            place.and_then(|p| p.position),
+            place.map(|p| p.size),
+            cx.window_state(id)
           )
         })
         .collect::<Vec<_>>()
